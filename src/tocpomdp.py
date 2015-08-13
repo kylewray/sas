@@ -67,63 +67,59 @@ class ToCPOMDP(POMDP):
 
         self.ns = len(toc.H) + 1 # Add the possible "success" state as a successor, too.
 
-        print(self.states)
-        print(self.actions)
-        print(self.observations)
-
         S = [[[int(-1) for sp in range(self.ns)] for a in range(self.m)] for s in range(self.n)]
         T = [[[float(0.0) for sp in range(self.ns)] for a in range(self.m)] for s in range(self.n)]
         for s, state in enumerate(self.states):
             for a, action in enumerate(self.actions):
                 cur = 0
 
-                try:
-                    for sp, statePrime in enumerate(self.states):
-                        # Absorbing states always self-loop.
-                        if state in calZ and statePrime in calZ and state == statePrime:
-                            S[s][a][cur] = sp
-                            T[s][a][cur] = 1.0
-                            cur += 1
+                for sp, statePrime in enumerate(self.states):
+                    # Absorbing states always self-loop.
+                    if state in calZ and statePrime in calZ and state == statePrime:
+                        S[s][a][cur] = sp
+                        T[s][a][cur] = 1.0
+                        cur += 1
 
-                        # If the countdown runs out of time, then it is over if control fails to transfer.
-                        #if state not in calZ and state[0] == 0 and statePrime == "failed":
-                        #    S[s][a][cur] = sp
-                        #    T[s][a][cur] = 1.0 - toc.Pc[(state[1], state[2], state[3])]
-                        #    cur += 1
+                    # If the agent aborts, then transition to aborted. This is always an option.
+                    if state not in calZ and action == "abort" and statePrime == "aborted":
+                        S[s][a][cur] = sp
+                        T[s][a][cur] = 1.0
+                        cur += 1
 
-                        # If the agent aborts, then transition to aborted.
-                        #if state not in calZ and state[0] > 0 and action == "abort" and statePrime == "aborted":
-                        #    S[s][a][cur] = sp
-                        #    T[s][a][cur] = 1.0
-                        #    cur += 1
+                    # Randomly, it may actually succeed to transfer control.
+                    if state not in calZ and action != "abort" and statePrime == "success":
+                        S[s][a][cur] = sp
+                        T[s][a][cur] = toc.Pc[(state[1], state[2], state[3])]
+                        cur += 1
 
-                        # Randomly, it may actually succeed to transfer control.
-                        if state not in calZ and statePrime == "success":
-                            S[s][a][cur] = sp
-                            T[s][a][cur] = toc.Pc[(state[1], state[2], state[3])]
-                            cur += 1
+                    # If the countdown runs out of time, then it is over if control fails to transfer.
+                    # At this point, it is too late to "abort".
+                    if state not in calZ and state[0] == 0 and action != "abort" and statePrime == "failed":
+                        S[s][a][cur] = sp
+                        T[s][a][cur] = 1.0 - toc.Pc[(state[1], state[2], state[3])]
+                        cur += 1
 
-                        # The agent may not have sent a message, so align everything else and
-                        # properly form a distribution over toc.Ph. The first case considers when
-                        # the agent actually sends a message.
-                        if state not in calZ and statePrime not in calZ and state[0] > 0 and statePrime[0] == state[0] - 1 and \
-                                action not in ["abort", "nop"] and state[2] == action and statePrime[3] == 0:
-                            S[s][a][cur] = sp
-                            T[s][a][cur] = (1.0 - toc.Pc[(state[1], state[2], state[3])]) * toc.Ph[(state[1], state[2], state[3], statePrime[1])]
-                            cur += 1
-
-                        if state not in calZ and statePrime not in calZ and state[0] > 0 and statePrime[0] == state[0] - 1 and \
-                                action == "nop" and statePrime[2] == state[2] and statePrime[3] == state[3] + 1:
+                    # If the agent does not abort, then there are two cases. First, (1) no message is sent (i.e., "nop").
+                    # In this case, the distribution follows toc.Ph, but only if the next state:
+                    # (a) decrements the timer, (b) distribution over human states, (c) same message, (d) increased time
+                    # since the last message, or self-loop for the maximal case.
+                    if state not in calZ and state[0] > 0 and action != "abort" and statePrime not in calZ and \
+                            action == "nop" and statePrime[0] == state[0] - 1 and statePrime[2] == state[2]:
+                        if statePrime[3] == state[3] + 1:
                             S[s][a][cur] = sp
                             T[s][a][cur] = (1.0 - toc.Pc[(state[1], state[2], state[3])]) * toc.Ph[(state[1], state[2], state[3], statePrime[1])]
                             cur += 1
+                        elif statePrime[3] == state[3] and statePrime[3] == len(toc.T) - 1:
+                            S[s][a][cur] = sp
+                            T[s][a][cur] = 1.0 - toc.Pc[(state[1], state[2], state[3])]
+                            cur += 1
 
-                except Exception:
-                    print(cur)
-                    pass
-
-        print(np.array(S))
-        print(np.array(T))
+                    # Next, the other case: (2) a message is sent.
+                    if state not in calZ and state[0] > 0 and action != "abort" and statePrime not in calZ and \
+                            action != "nop" and statePrime[0] == state[0] - 1 and statePrime[2] == action and statePrime[3] == 0:
+                        S[s][a][cur] = sp
+                        T[s][a][cur] = (1.0 - toc.Pc[(state[1], state[2], state[3])]) * toc.Ph[(state[1], state[2], state[3], statePrime[1])]
+                        cur += 1
 
         array_type_nmns_int = ct.c_int * (self.n * self.m * self.ns)
         array_type_nmns_float = ct.c_float * (self.n * self.m * self.ns)
@@ -131,17 +127,92 @@ class ToCPOMDP(POMDP):
         self.S = array_type_nmns_int(*np.array(S).flatten())
         self.T = array_type_nmns_float(*np.array(T).flatten())
 
+        O = [[[0.0 for z in range(self.z)] for sp in range(self.n)] for a in range(self.m)]
+        for a, action in enumerate(self.actions):
+            for sp, statePrime in enumerate(self.states):
+                for o, observation in enumerate(self.observations):
+                    # In terminal states, there's a 1.0 probability of the agent knowing it is there.
+                    if statePrime in calZ and observation == statePrime:
+                        O[a][sp][o] = 1.0
+
+                    # Otherwise, the probability follows from the ToC object, given the observation is valid.
+                    if statePrime not in calZ and observation not in calZ:
+                        O[a][sp][o] = toc.Po[(statePrime[1], observation)]
+
+        array_type_mnz_float = ct.c_float * (self.m * self.n * self.z)
+        self.O = array_type_mnz_float(*np.array(O).flatten())
+
+        # Compute the maximum ToC's cost.
+        Cmax = max([value for key, value in toc.C.items()])
+
+        R = [[0.0 for a in range(self.m)] for s in range(self.n)]
+        for s, state in enumerate(self.states):
+            for a, action in enumerate(self.actions):
+                # There is no cost in the goal 'success' state.
+                if state == "success":
+                    R[s][a] = 0.0
+
+                # Failure repeatedly has the worst cost.
+                if state == "failure":
+                    R[s][a] = -Cmax
+
+                # The aborted state is not ideal, but is better than failure. It has
+                # a diminishing cost w.r.t. the largest cost.
+                if state == "aborted":
+                    R[s][a] = 0.0 #-pow(Cmax, 0.5)
+
+                # NOP has a very small immediate cost, as well as "abort".
+                if state not in calZ and action in ["nop", "abort"]:
+                    R[s][a] = 0.01
+
+                # All other states have a cost equal to the toc.C values. This is based on
+                # the human's state, how long it has been since the human was annoyed,
+                # and the *new* message just chosen.
+                if state not in calZ and action not in ["nop", "abort"]:
+                    R[s][a] = -toc.C[(state[1], action, state[3])]
+
+        self.Rmax = np.array(R).max()
+        self.Rmin = np.array(R).min()
+        self.k = 1
+
+        array_type_nm_float = ct.c_float * (self.n * self.m)
+
+        self.R = array_type_nm_float(*np.array(R).flatten())
+
+        # We know the maximal horizon necessary, since we have a countdown timer.
+        self.horizon = len(toc.T)
+
+        # Setup the belief points. We begin with a seed state uniform over all three
+        # human states, and maximal time remaining, maximal time since last message,
+        # and the last message was NOP.
+        Z = [[self.states.index((len(toc.T) - 1, h, "nop", len(toc.T) - 1)) for h in toc.H]]
+        B = [[1.0 / float(len(toc.H)) for h in toc.H]]
+
+        self.r = 1
+        self.rz = len(toc.H)
+
+        array_type_rrz_int = ct.c_int * (self.r * self.rz)
+        array_type_rrz_float = ct.c_float * (self.r * self.rz)
+
+        self.Z = array_type_rrz_int(*np.array(Z).flatten())
+        self.B = array_type_rrz_float(*np.array(B).flatten())
+
+        # Now, expand this seed state proportional to the ToC's H, M, and T variables.
+        desired = 10 * len(toc.H) * len(toc.M) * len(toc.T)
+        self.expand(method='random', numDesiredBeliefPoints=desired)
+
+
 if __name__ == "__main__":
     print("Performing ToCPOMDP Unit Test...")
 
-    toc = ToC(randomize=(2, 2, 2, 2))
+    toc = ToC(randomize=(3, 2, 3, 5))
     tocpomdp = ToCPOMDP()
     tocpomdp.create(toc)
     print(tocpomdp)
 
-    #Gamma, pi, timing = tocpomdp.solve()
-    #print("Gamma:\n", Gamma)
-    #print("pi:\n", pi.tolist())
+    Gamma, pi, timing = tocpomdp.solve()
+    print("Gamma:\n", Gamma)
+    print("pi:\n", pi)
 
 
     print("Done.")

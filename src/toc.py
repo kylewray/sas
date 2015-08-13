@@ -21,6 +21,8 @@
 """
 
 import random as rnd
+import itertools as it
+
 
 class ToC(object):
     """ Transfer of Control (ToC) formal problem statement. """
@@ -59,31 +61,64 @@ class ToC(object):
         self.O = ["o%i" % (i) for i in range(no)]
         self.T = [int(i) for i in range(nt)]
 
-        for h in self.H:
-            for m in self.M:
+        for k, h in enumerate(self.H):
+            for i, m in enumerate(self.M):
                 for t in self.T:
-                    values = [rnd.random() for hp in self.H]
-                    norm = sum(values)
+                    # NOP has a uniform random noise chance of transitioning
+                    # the human state around. Or, if there were more messages
+                    # than human states, then they change the state at random.
+                    if m == "nop" or i > k:
+                        values = [rnd.random() for hp in self.H]
+                        norm = sum(values)
 
-                    for i, hp in enumerate(self.H):
-                        self.Ph[(h, m, t, hp)] = values[i] / norm
+                        for j, hp in enumerate(self.H):
+                            self.Ph[(h, m, t, hp)] = values[j] / norm
+
+                    # Otherwise, each message type has a high likelihood of
+                    # transitioning the human to the corresponding human state.
+                    else:
+                        values = [rnd.random() + float(len(self.H) * int(i == j)) for j, hp in enumerate(self.H)]
+                        norm = sum(values)
+
+                        for j, hp in enumerate(self.H):
+                            self.Ph[(h, m, t, hp)] = values[j] / norm
 
         for h in self.H:
-            for m in self.M:
+            for i, m in enumerate(self.M):
+                values = [rnd.uniform(0.0, 0.25) / pow(float(t + 1), float(i) * 3.0 / float(len(self.M)) + 0.25) for t in self.T]
+                values = sorted(values, reverse=True)
+
                 for t in self.T:
-                    self.Pc[(h, m, t)] = rnd.random()
+                    # The probability of transferring control slowly decreases over time.
+                    # Messages with lower index raise this probability, but cost much more.
+                    self.Pc[(h, m, t)] = values[t]
 
-        for h in self.H:
-            values = [rnd.random() for o in self.O]
+        for i, h in enumerate(self.H):
+            # Note: It is much more likely to make a particular observation if the human
+            # is in a particular state. If there are more human states than observations,
+            # then some human states we will always be very uncertain about. Conversely,
+            # if there are more observations than human states, then we will make
+            # quasi-uniformly weaker observations about human states.
+            values = [rnd.random() + float(len(self.O) * int(i == j)) for j, o in enumerate(self.O)]
             norm = sum(values)
 
             for i, o in enumerate(self.O):
                 self.Po[(h, o)] = values[i] / norm
 
         for h in self.H:
-            for m in self.M:
+            for i, m in enumerate(self.M):
+                # Messages with lower index cost more.
+                msgCost = (len(self.M) - 1 - float(i)) * 10.0 + rnd.uniform(0.25, 1.0) * 10.0
+
                 for t in self.T:
-                    self.C[(h, m, t)] = float(rnd.randint(1, 100))
+                    # NOP costs nothing.
+                    if m == "nop":
+                        self.C[(h, m, t)] = 0.0
+
+                    # Other messages cost more for lower-indexes, but all of them degrade in
+                    # cost over time.
+                    else:
+                        self.C[(h, m, t)] = msgCost / pow(t + 1, 0.5)
 
     def __str__(self):
         """ Convert this ToC object to a string representation.
@@ -98,23 +133,23 @@ class ToC(object):
         result += "T = %s\n\n" % (str(self.T))
 
         result += "Ph(h, m, t, h'):\n"
-        for key, value in self.Ph.items():
-            result += "%s: %.3f\n" % (str(key), value)
+        for h, m, t, hp in it.product(self.H, self.M, self.T, self.H):
+            result += "(%s, %s, %i, %s): %.3f\n" % (h, m, t, hp, self.Ph[(h, m, t, hp)])
         result += "\n"
 
         result += "Pc(h, m, t):\n"
-        for key, value in self.Pc.items():
-            result += "%s: %.3f\n" % (str(key), value)
+        for h, m, t in it.product(self.H, self.M, self.T):
+            result += "(%s, %s, %i): %.3f\n" % (h, m, t, self.Pc[(h, m, t)])
         result += "\n"
 
         result += "Po(h, o):\n"
-        for key, value in self.Po.items():
-            result += "%s: %.3f\n" % (str(key), value)
+        for h, o in it.product(self.H, self.O):
+            result += "(%s, %s): %.3f\n" % (h, o, self.Po[(h, o)])
         result += "\n"
 
         result += "C(h, m, t):\n"
-        for key, value in self.C.items():
-            result += "%s: %.3f\n" % (str(key), value)
+        for h, m, t in it.product(self.H, self.M, self.T):
+            result += "(%s, %s, %i): %.3f\n" % (h, m, t, self.C[(h, m, t)])
         result += "\n"
 
         return result
@@ -123,7 +158,7 @@ class ToC(object):
 if __name__ == "__main__":
     print("Performing ToC Unit Test...")
 
-    toc = ToC(randomize=(4, 1, 3, 5))
+    toc = ToC(randomize=(3, 2, 3, 5))
     print(toc)
 
     print("Done.")
