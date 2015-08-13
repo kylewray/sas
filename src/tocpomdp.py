@@ -142,8 +142,9 @@ class ToCPOMDP(POMDP):
         array_type_mnz_float = ct.c_float * (self.m * self.n * self.z)
         self.O = array_type_mnz_float(*np.array(O).flatten())
 
-        # Compute the maximum ToC's cost.
+        # Compute the maximum and non-zero minimum ToC's cost.
         Cmax = max([value for key, value in toc.C.items()])
+        Cmin = min([value for key, value in toc.C.items() if value > 0.0])
 
         R = [[0.0 for a in range(self.m)] for s in range(self.n)]
         for s, state in enumerate(self.states):
@@ -156,10 +157,9 @@ class ToCPOMDP(POMDP):
                 if state == "failure":
                     R[s][a] = -Cmax
 
-                # The aborted state is not ideal, but is better than failure. It has
-                # a diminishing cost w.r.t. the largest cost.
+                # The aborted state is not ideal, but is better than failure.
                 if state == "aborted":
-                    R[s][a] = 0.0 #-pow(Cmax, 0.5)
+                    R[s][a] = -Cmin
 
                 # NOP has a very small immediate cost, as well as "abort".
                 if state not in calZ and action in ["nop", "abort"]:
@@ -173,14 +173,19 @@ class ToCPOMDP(POMDP):
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()
-        self.k = 1
 
         array_type_nm_float = ct.c_float * (self.n * self.m)
 
         self.R = array_type_nm_float(*np.array(R).flatten())
 
-        # We know the maximal horizon necessary, since we have a countdown timer.
-        self.horizon = len(toc.T)
+        # There was only one reward, and there's a simple discount factor.
+        self.k = 1
+        self.gamma = 0.95
+
+        # We know the maximal horizon necessary, since we have a countdown timer, but
+        # it is important to also ensure the system considers the absorbing state
+        # at the end, 
+        self.horizon = len(toc.T) * 5
 
         # Setup the belief points. We begin with a seed state uniform over all three
         # human states, and maximal time remaining, maximal time since last message,
@@ -212,8 +217,7 @@ if __name__ == "__main__":
 
     Gamma, pi, timing = tocpomdp.solve()
     print("Gamma:\n", Gamma)
-    print("pi:\n", pi)
-
+    print("pi:\n", pi.tolist())
 
     print("Done.")
 

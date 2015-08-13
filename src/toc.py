@@ -83,15 +83,19 @@ class ToC(object):
                         for j, hp in enumerate(self.H):
                             self.Ph[(h, m, t, hp)] = values[j] / norm
 
-        for h in self.H:
+        for j, h in enumerate(self.H):
             for i, m in enumerate(self.M):
-                values = [rnd.uniform(0.0, 0.25) / pow(float(t + 1), float(i) * 3.0 / float(len(self.M)) + 0.25) for t in self.T]
+                #values = [rnd.uniform(0.0, 0.25) / pow(float(t + 1), float(i) * 3.0 / float(len(self.M)) + 0.25) for t in self.T]
+                values = [rnd.uniform(0.25 * float(t) / float(len(self.T)), \
+                                      0.25 * float(t + 1) / float(len(self.T))) for t in self.T]
                 values = sorted(values, reverse=True)
 
                 for t in self.T:
                     # The probability of transferring control slowly decreases over time.
                     # Messages with lower index raise this probability, but cost much more.
-                    self.Pc[(h, m, t)] = values[t]
+                    # Also, the lower human state index, the better chance of transferring
+                    # control; i.e., this is desired.
+                    self.Pc[(h, m, t)] = values[t] * float(len(self.M) - 1 - i) / float(len(self.M)) * float(len(self.H) - 1 - j) / float(len(self.H))
 
         for i, h in enumerate(self.H):
             # Note: It is much more likely to make a particular observation if the human
@@ -108,7 +112,7 @@ class ToC(object):
         for h in self.H:
             for i, m in enumerate(self.M):
                 # Messages with lower index cost more.
-                msgCost = (len(self.M) - 1 - float(i)) * 10.0 + rnd.uniform(0.25, 1.0) * 10.0
+                msgCost = (len(self.M) - 1 - float(i)) * 25.0 + rnd.uniform(0.25, 1.0) * 5.0
 
                 for t in self.T:
                     # NOP costs nothing.
@@ -117,7 +121,7 @@ class ToC(object):
 
                     # Other messages cost more for lower-indexes, but all of them degrade in
                     # cost over time.
-                    else:
+                    if m != "nop":
                         self.C[(h, m, t)] = msgCost / pow(t + 1, 0.5)
 
     def __str__(self):
