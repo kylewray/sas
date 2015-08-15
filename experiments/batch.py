@@ -27,7 +27,19 @@ thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 sys.path.append(os.path.join(thisFilePath, "..", "src"))
 from toc import *
+from tocpomdp import *
 
-toc = ToC(randomize=(2, 2, 2, 5))
-print(toc)
+
+def batch():
+    """ Execute a batch of experiments which varies several parameters and outputs results to files. """
+
+    print("Executing Batch Experiments...")
+
+
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    batch()
 

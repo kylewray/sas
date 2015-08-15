@@ -59,7 +59,7 @@ class ToC(object):
         self.H = ["h%i" % (i) for i in range(nh)]
         self.M = ["m%i" % (i) for i in range(nm)] + ["nop"]
         self.O = ["o%i" % (i) for i in range(no)]
-        self.T = [int(i) for i in range(nt)]
+        self.T = [int(i) for i in range(nt + 1)]
 
         for k, h in enumerate(self.H):
             for i, m in enumerate(self.M):
@@ -86,8 +86,8 @@ class ToC(object):
         for j, h in enumerate(self.H):
             for i, m in enumerate(self.M):
                 #values = [rnd.uniform(0.0, 0.25) / pow(float(t + 1), float(i) * 3.0 / float(len(self.M)) + 0.25) for t in self.T]
-                values = [rnd.uniform(0.25 * float(t) / float(len(self.T)), \
-                                      0.25 * float(t + 1) / float(len(self.T))) for t in self.T]
+                values = [rnd.uniform(0.75 * float(t) / float(len(self.T)), \
+                                      0.75 * float((t + 1)) / float(len(self.T))) for t in self.T]
                 values = sorted(values, reverse=True)
 
                 for t in self.T:
@@ -95,7 +95,10 @@ class ToC(object):
                     # Messages with lower index raise this probability, but cost much more.
                     # Also, the lower human state index, the better chance of transferring
                     # control; i.e., this is desired.
-                    self.Pc[(h, m, t)] = values[t] * float(len(self.M) - 1 - i) / float(len(self.M)) * float(len(self.H) - 1 - j) / float(len(self.H))
+                    if values[t] > 0.1:
+                        self.Pc[(h, m, t)] = values[t] * float(pow(len(self.M) - 1 - i, 2)) / float(pow(len(self.M), 2)) * float(len(self.H) - j) / float(len(self.H))
+                    else:
+                        self.Pc[(h, m, t)] = 0.0
 
         for i, h in enumerate(self.H):
             # Note: It is much more likely to make a particular observation if the human
@@ -111,18 +114,22 @@ class ToC(object):
 
         for h in self.H:
             for i, m in enumerate(self.M):
-                # Messages with lower index cost more.
+                # Messages with a lower index cost more.
                 msgCost = (len(self.M) - 1 - float(i)) * 25.0 + rnd.uniform(0.25, 1.0) * 5.0
 
                 for t in self.T:
-                    # NOP costs nothing.
-                    if m == "nop":
-                        self.C[(h, m, t)] = 0.0
+                    # It doesn't matter which of the new messages you send; they are only
+                    # dependent on the previous message and how long it has been since you've
+                    # sent it.
+                    for mp in self.M:
+                        # NOP costs nothing.
+                        if mp == "nop":
+                            self.C[(h, m, t, mp)] = 0.0
 
-                    # Other messages cost more for lower-indexes, but all of them degrade in
-                    # cost over time.
-                    if m != "nop":
-                        self.C[(h, m, t)] = msgCost / pow(t + 1, 0.5)
+                        # Other messages cost more for lower-indexes, but all of them degrade in
+                        # cost over time.
+                        if mp != "nop":
+                            self.C[(h, m, t, mp)] = msgCost / pow(t + 1, 0.5)
 
     def __str__(self):
         """ Convert this ToC object to a string representation.
@@ -143,7 +150,7 @@ class ToC(object):
 
         result += "Pc(h, m, t):\n"
         for h, m, t in it.product(self.H, self.M, self.T):
-            result += "(%s, %s, %i): %.3f\n" % (h, m, t, self.Pc[(h, m, t)])
+            result += "(%s, %s, %i): %.8f\n" % (h, m, t, self.Pc[(h, m, t)])
         result += "\n"
 
         result += "Po(h, o):\n"
@@ -151,9 +158,9 @@ class ToC(object):
             result += "(%s, %s): %.3f\n" % (h, o, self.Po[(h, o)])
         result += "\n"
 
-        result += "C(h, m, t):\n"
-        for h, m, t in it.product(self.H, self.M, self.T):
-            result += "(%s, %s, %i): %.3f\n" % (h, m, t, self.C[(h, m, t)])
+        result += "C(h, m, t, m'):\n"
+        for h, m, t, mp in it.product(self.H, self.M, self.T, self.M):
+            result += "(%s, %s, %i, %s): %.3f\n" % (h, m, t, mp, self.C[(h, m, t, mp)])
         result += "\n"
 
         return result

@@ -155,21 +155,26 @@ class ToCPOMDP(POMDP):
 
                 # Failure repeatedly has the worst cost.
                 if state == "failure":
-                    R[s][a] = -Cmax
+                    R[s][a] = -1e+35
 
                 # The aborted state is not ideal, but is better than failure.
                 if state == "aborted":
-                    R[s][a] = -Cmin
+                    R[s][a] = 0.0
+
+                # Abort pays the maximal cost over all time steps; much better
+                # than failure though.
+                if state not in calZ and action == "abort":
+                    R[s][a] = -Cmin #-Cmax# * len(toc.T)
 
                 # NOP has a very small immediate cost, as well as "abort".
-                if state not in calZ and action in ["nop", "abort"]:
-                    R[s][a] = 0.01
+                if state not in calZ and action == "nop":
+                    R[s][a] = -0.01
 
                 # All other states have a cost equal to the toc.C values. This is based on
                 # the human's state, how long it has been since the human was annoyed,
                 # and the *new* message just chosen.
                 if state not in calZ and action not in ["nop", "abort"]:
-                    R[s][a] = -toc.C[(state[1], action, state[3])]
+                    R[s][a] = -toc.C[(state[1], state[2], state[3], action)]
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()
@@ -177,15 +182,6 @@ class ToCPOMDP(POMDP):
         array_type_nm_float = ct.c_float * (self.n * self.m)
 
         self.R = array_type_nm_float(*np.array(R).flatten())
-
-        # There was only one reward, and there's a simple discount factor.
-        self.k = 1
-        self.gamma = 0.95
-
-        # We know the maximal horizon necessary, since we have a countdown timer, but
-        # it is important to also ensure the system considers the absorbing state
-        # at the end, 
-        self.horizon = len(toc.T) * 5
 
         # Setup the belief points. We begin with a seed state uniform over all three
         # human states, and maximal time remaining, maximal time since last message,
@@ -203,8 +199,20 @@ class ToCPOMDP(POMDP):
         self.B = array_type_rrz_float(*np.array(B).flatten())
 
         # Now, expand this seed state proportional to the ToC's H, M, and T variables.
+        # For this we will use the number of time steps, but that is just because
+        # expand randomly chooses from [0, h] to explore a belief. Since there's
+        # an absorbing state, most of the beliefs would get 'stuck' there with higher h.
+        self.horizon = len(toc.T)
         desired = 10 * len(toc.H) * len(toc.M) * len(toc.T)
         self.expand(method='random', numDesiredBeliefPoints=desired)
+
+        # There was only one reward, and there's a simple discount factor.
+        self.k = 1
+        self.gamma = 0.99
+
+        # We know the maximal horizon necessary, since we have a countdown timer, but
+        # make sure it also realizes how bad some of the absorbing states are.
+        self.horizon = len(toc.T) * 1
 
 
 if __name__ == "__main__":
