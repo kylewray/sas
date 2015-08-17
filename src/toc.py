@@ -86,8 +86,8 @@ class ToC(object):
         for j, h in enumerate(self.H):
             for i, m in enumerate(self.M):
                 #values = [rnd.uniform(0.0, 0.25) / pow(float(t + 1), float(i) * 3.0 / float(len(self.M)) + 0.25) for t in self.T]
-                values = [rnd.uniform(0.75 * float(t) / float(len(self.T)), \
-                                      0.75 * float((t + 1)) / float(len(self.T))) for t in self.T]
+                values = [rnd.uniform(0.5 * float(t) / float(len(self.T)), \
+                                      0.5 * float((t + 1)) / float(len(self.T))) for t in self.T]
                 values = sorted(values, reverse=True)
 
                 for t in self.T:
@@ -95,7 +95,7 @@ class ToC(object):
                     # Messages with lower index raise this probability, but cost much more.
                     # Also, the lower human state index, the better chance of transferring
                     # control; i.e., this is desired.
-                    if values[t] > 0.1:
+                    if values[t] > 0.3:
                         self.Pc[(h, m, t)] = values[t] * float(pow(len(self.M) - 1 - i, 2)) / float(pow(len(self.M), 2)) * float(len(self.H) - j) / float(len(self.H))
                     else:
                         self.Pc[(h, m, t)] = 0.0

@@ -155,26 +155,31 @@ class ToCPOMDP(POMDP):
 
                 # Failure repeatedly has the worst cost.
                 if state == "failure":
-                    R[s][a] = -1e+35
+                    R[s][a] = -Cmax #-1e+35
 
                 # The aborted state is not ideal, but is better than failure.
                 if state == "aborted":
-                    R[s][a] = 0.0
+                    R[s][a] = 0.0 #-Cmin
 
                 # Abort pays the maximal cost over all time steps; much better
                 # than failure though.
                 if state not in calZ and action == "abort":
-                    R[s][a] = -Cmin #-Cmax# * len(toc.T)
+                    if state[0] > 0:
+                        R[s][a] = -Cmax #-Cmax# * len(toc.T)
+                    else:
+                        R[s][a] = 0.0
 
                 # NOP has a very small immediate cost, as well as "abort".
                 if state not in calZ and action == "nop":
+                    # Note: This value has to be less than the reward for aborting at state[0] == 0 above.
+                    # If not, then it will fail to choose abort.
                     R[s][a] = -0.01
 
                 # All other states have a cost equal to the toc.C values. This is based on
                 # the human's state, how long it has been since the human was annoyed,
                 # and the *new* message just chosen.
                 if state not in calZ and action not in ["nop", "abort"]:
-                    R[s][a] = -toc.C[(state[1], state[2], state[3], action)]
+                    R[s][a] = -toc.C[(state[1], state[2], state[3], action)] * (toc.Pc[(state[1], state[2], state[3])] > 0.0)
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()
@@ -212,7 +217,7 @@ class ToCPOMDP(POMDP):
 
         # We know the maximal horizon necessary, since we have a countdown timer, but
         # make sure it also realizes how bad some of the absorbing states are.
-        self.horizon = len(toc.T) * 1
+        self.horizon = len(toc.T) * 10
 
 
 if __name__ == "__main__":
