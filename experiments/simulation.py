@@ -148,7 +148,7 @@ def initialize():
     """
 
     print("Creating the ToC POMDP.")
-    toc = ToC(randomize=(3, 2, 3, 5))
+    toc = ToC(randomize=(3, 2, 3, 10))
     tocpomdp = ToCPOMDP()
     tocpomdp.create(toc)
     print(tocpomdp)

@@ -114,10 +114,9 @@ class ToC(object):
 
         for h in self.H:
             for i, m in enumerate(self.M):
-                # Messages with a lower index cost more.
-                msgCost = (len(self.M) - 1 - float(i)) * 25.0 + rnd.uniform(0.25, 1.0) * 5.0
-
                 for t in self.T:
+                    msgCost = rnd.uniform(0.25, 1.0) * 10.0
+
                     # It doesn't matter which of the new messages you send; they are only
                     # dependent on the previous message and how long it has been since you've
                     # sent it.
@@ -129,7 +128,11 @@ class ToC(object):
                         # Other messages cost more for lower-indexes, but all of them degrade in
                         # cost over time.
                         if mp != "nop":
-                            self.C[(h, m, t, mp)] = msgCost / pow(t + 1, 0.5)
+                            # Messages with a lower index cost more.
+                            msgCost += abs((i + 1) / len(self.M) - (len(self.T) - t) / len(self.T))
+                            #if m == mp:
+                            #    msgCost *= 5.0
+                            self.C[(h, m, t, mp)] = msgCost
 
     def __str__(self):
         """ Convert this ToC object to a string representation.

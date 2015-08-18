@@ -209,7 +209,7 @@ class ToCPOMDP(POMDP):
         # an absorbing state, most of the beliefs would get 'stuck' there with higher h.
         self.horizon = len(toc.T)
         desired = 10 * len(toc.H) * len(toc.M) * len(toc.T)
-        self.expand(method='random', numDesiredBeliefPoints=desired)
+        self.expand(method='pema', numBeliefsToAdd=desired)
 
         # There was only one reward, and there's a simple discount factor.
         self.k = 1
