@@ -109,7 +109,7 @@ class ToCPOMDP(POMDP):
                             S[s][a][cur] = sp
                             T[s][a][cur] = (1.0 - toc.Pc[(state[1], state[2], state[3])]) * toc.Ph[(state[1], state[2], state[3], statePrime[1])]
                             cur += 1
-                        elif statePrime[3] == state[3] and statePrime[3] == len(toc.T) - 1:
+                        elif statePrime[3] == state[3] and statePrime[3] == len(toc.T) - 1 and statePrime[1] == state[1]:
                             S[s][a][cur] = sp
                             T[s][a][cur] = 1.0 - toc.Pc[(state[1], state[2], state[3])]
                             cur += 1
@@ -203,21 +203,21 @@ class ToCPOMDP(POMDP):
         self.Z = array_type_rrz_int(*np.array(Z).flatten())
         self.B = array_type_rrz_float(*np.array(B).flatten())
 
-        # Now, expand this seed state proportional to the ToC's H, M, and T variables.
-        # For this we will use the number of time steps, but that is just because
-        # expand randomly chooses from [0, h] to explore a belief. Since there's
-        # an absorbing state, most of the beliefs would get 'stuck' there with higher h.
-        self.horizon = len(toc.T)
-        desired = 10 * len(toc.H) * len(toc.M) * len(toc.T)
-        self.expand(method='pema', numBeliefsToAdd=desired)
-
         # There was only one reward, and there's a simple discount factor.
         self.k = 1
-        self.gamma = 0.99
+        self.gamma = 0.95
 
         # We know the maximal horizon necessary, since we have a countdown timer, but
         # make sure it also realizes how bad some of the absorbing states are.
         self.horizon = len(toc.T) * 10
+
+        # Note: 2^8 = 256 belief points, since method 'distinct_beliefs' doubles the number
+        # of beliefs every time it is called.
+        #self.expand(method='random', numBeliefsToAdd=100)
+        for i in range(8):
+            self.expand(method='distinct_beliefs')
+        #for i in range(29):
+        #    self.expand(method='pema')
 
 
 if __name__ == "__main__":
