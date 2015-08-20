@@ -130,9 +130,7 @@ class ToC(object):
                         if mp != "nop":
                             # Messages with a lower index cost more.
                             msgCost += abs((i + 1) / len(self.M) - (len(self.T) - t) / len(self.T))
-                            #if m == mp:
-                            #    msgCost *= 5.0
-                            self.C[(h, m, t, mp)] = msgCost
+                            self.C[(h, m, t, mp)] = msgCost + 0.01
 
     def __str__(self):
         """ Convert this ToC object to a string representation.

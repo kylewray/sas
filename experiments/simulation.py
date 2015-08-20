@@ -119,6 +119,9 @@ def update_belief(pomdp, b, a, o):
 
         Returns:
             The next belief after taking an action and observing something.
+
+        Raises:
+            Exception if the belief is invalid due to an impossible observation.
     """
 
     bp = np.array([0.0 for i in range(pomdp.n)])
@@ -132,6 +135,9 @@ def update_belief(pomdp, b, a, o):
 
     for sp in range(pomdp.n):
         bp[sp] *= pomdp.O[a * pomdp.n * pomdp.z + sp * pomdp.z + o]
+
+    if bp.sum() == 0.0:
+        raise Exception()
 
     bp = bp / bp.sum()
 

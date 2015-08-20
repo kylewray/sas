@@ -194,7 +194,11 @@ class ToCPOMDP(POMDP):
         Z = [[self.states.index((len(toc.T) - 1, h, "nop", len(toc.T) - 1)) for h in toc.H]]
         B = [[1.0 / float(len(toc.H)) for h in toc.H]]
 
-        self.r = 1
+        # Add beliefs for the final time step in order to guarantee abort can always be executed.
+        Z += [[self.states.index((0, h, m, t)) for h in toc.H] for m, t in it.product(toc.M, toc.T)]
+        B += [[1.0 / float(len(toc.H)) for h in toc.H] for m, t in it.product(toc.M, toc.T)]
+
+        self.r = len(B)
         self.rz = len(toc.H)
 
         array_type_rrz_int = ct.c_int * (self.r * self.rz)
@@ -211,13 +215,11 @@ class ToCPOMDP(POMDP):
         # make sure it also realizes how bad some of the absorbing states are.
         self.horizon = len(toc.T) * 10
 
-        # Note: 2^8 = 256 belief points, since method 'distinct_beliefs' doubles the number
-        # of beliefs every time it is called.
         #self.expand(method='random', numBeliefsToAdd=100)
-        for i in range(8):
-            self.expand(method='distinct_beliefs')
-        #for i in range(29):
-        #    self.expand(method='pema')
+        #for i in range(3):
+        #    self.expand(method='distinct_beliefs')
+        for i in range(30):
+            self.expand(method='pema')
 
 
 if __name__ == "__main__":
