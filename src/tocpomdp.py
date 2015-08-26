@@ -54,15 +54,15 @@ class ToCPOMDP(POMDP):
                 toc --  The transfer of control object.
         """
 
-        calZ = ["success", "failed", "aborted"]
+        calE = ["success", "failure", "aborted"]
 
-        self.states = list(it.product(toc.T, toc.H, toc.M, toc.T)) + list(calZ)
+        self.states = list(it.product(toc.T, toc.H, toc.M, toc.T)) + list(calE)
         self.n = len(self.states)
 
         self.actions = list(toc.M) + ["abort"]
         self.m = len(self.actions)
 
-        self.observations = list(toc.O) + calZ
+        self.observations = list(toc.O) + calE
         self.z = len(self.observations)
 
         self.ns = len(toc.H) + 1 # Add the possible "success" state as a successor, too.
@@ -75,26 +75,26 @@ class ToCPOMDP(POMDP):
 
                 for sp, statePrime in enumerate(self.states):
                     # Absorbing states always self-loop.
-                    if state in calZ and statePrime in calZ and state == statePrime:
+                    if state in calE and statePrime in calE and state == statePrime:
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
 
                     # If the agent aborts, then transition to aborted. This is always an option.
-                    if state not in calZ and action == "abort" and statePrime == "aborted":
+                    if state not in calE and action == "abort" and statePrime == "aborted":
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
 
                     # Randomly, it may actually succeed to transfer control.
-                    if state not in calZ and action != "abort" and statePrime == "success":
+                    if state not in calE and action != "abort" and statePrime == "success":
                         S[s][a][cur] = sp
                         T[s][a][cur] = toc.Pc[(state[1], state[2], state[3])]
                         cur += 1
 
                     # If the countdown runs out of time, then it is over if control fails to transfer.
                     # At this point, it is too late to "abort".
-                    if state not in calZ and state[0] == 0 and action != "abort" and statePrime == "failed":
+                    if state not in calE and state[0] == 0 and action != "abort" and statePrime == "failure":
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0 - toc.Pc[(state[1], state[2], state[3])]
                         cur += 1
@@ -103,7 +103,7 @@ class ToCPOMDP(POMDP):
                     # In this case, the distribution follows toc.Ph, but only if the next state:
                     # (a) decrements the timer, (b) distribution over human states, (c) same message, (d) increased time
                     # since the last message, or self-loop for the maximal case.
-                    if state not in calZ and state[0] > 0 and action != "abort" and statePrime not in calZ and \
+                    if state not in calE and state[0] > 0 and action != "abort" and statePrime not in calE and \
                             action == "nop" and statePrime[0] == state[0] - 1 and statePrime[2] == state[2]:
                         if statePrime[3] == state[3] + 1:
                             S[s][a][cur] = sp
@@ -115,7 +115,7 @@ class ToCPOMDP(POMDP):
                             cur += 1
 
                     # Next, the other case: (2) a message is sent.
-                    if state not in calZ and state[0] > 0 and action != "abort" and statePrime not in calZ and \
+                    if state not in calE and state[0] > 0 and action != "abort" and statePrime not in calE and \
                             action != "nop" and statePrime[0] == state[0] - 1 and statePrime[2] == action and statePrime[3] == 0:
                         S[s][a][cur] = sp
                         T[s][a][cur] = (1.0 - toc.Pc[(state[1], state[2], state[3])]) * toc.Ph[(state[1], state[2], state[3], statePrime[1])]
@@ -132,11 +132,11 @@ class ToCPOMDP(POMDP):
             for sp, statePrime in enumerate(self.states):
                 for o, observation in enumerate(self.observations):
                     # In terminal states, there's a 1.0 probability of the agent knowing it is there.
-                    if statePrime in calZ and observation == statePrime:
+                    if statePrime in calE and observation == statePrime:
                         O[a][sp][o] = 1.0
 
                     # Otherwise, the probability follows from the ToC object, given the observation is valid.
-                    if statePrime not in calZ and observation not in calZ:
+                    if statePrime not in calE and observation not in calE:
                         O[a][sp][o] = toc.Po[(statePrime[1], observation)]
 
         array_type_mnz_float = ct.c_float * (self.m * self.n * self.z)
@@ -163,14 +163,14 @@ class ToCPOMDP(POMDP):
 
                 # Abort pays the maximal cost over all time steps; much better
                 # than failure though.
-                if state not in calZ and action == "abort":
+                if state not in calE and action == "abort":
                     if state[0] > 0:
                         R[s][a] = -Cmax #-Cmax# * len(toc.T)
                     else:
                         R[s][a] = 0.0
 
                 # NOP has a very small immediate cost, as well as "abort".
-                if state not in calZ and action == "nop":
+                if state not in calE and action == "nop":
                     # Note: This value has to be less than the reward for aborting at state[0] == 0 above.
                     # If not, then it will fail to choose abort.
                     R[s][a] = -0.01
@@ -178,8 +178,8 @@ class ToCPOMDP(POMDP):
                 # All other states have a cost equal to the toc.C values. This is based on
                 # the human's state, how long it has been since the human was annoyed,
                 # and the *new* message just chosen.
-                if state not in calZ and action not in ["nop", "abort"]:
-                    R[s][a] = -toc.C[(state[1], state[2], state[3], action)] * (toc.Pc[(state[1], state[2], state[3])] > 0.0)
+                if state not in calE and action not in ["nop", "abort"]:
+                    R[s][a] = -toc.C[(state[1], state[2], state[3])]
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()

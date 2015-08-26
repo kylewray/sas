@@ -43,7 +43,8 @@ def take_action(pomdp, Gamma, pi, b):
             b       --  The current belief point.
 
         Returns:
-            The best action index to take at this belief point.
+            bestAction  --  The best action index to take at this belief point.
+            bestVal     --  The best value for this best action.
     """
 
     bestVal = np.dot(Gamma[0, :], b)
@@ -55,7 +56,7 @@ def take_action(pomdp, Gamma, pi, b):
             bestVal = val
             bestAction = pi[i]
 
-    return bestAction
+    return bestAction, bestVal
 
 
 def transition_state(pomdp, s, a):
@@ -143,6 +144,7 @@ def update_belief(pomdp, b, a, o):
 
     return bp
 
+
 def initialize():
     """ Setup the POMDP and solve it.
 
@@ -183,21 +185,22 @@ def simulation(toc, tocpomdp, Gamma, pi, numIterations):
         print("Simulating Execution %i of %i." % (k + 1, numIterations))
         print("------------------------------------------------")
 
-        validInitialStates = [tocpomdp.states.index((len(toc.T) - 1, h, "nop", len(toc.T) - 1)) for h in toc.H]
+        validInitialStates = [tocpomdp.states.index((len(toc.T) - 1, h, "nop", 0)) for h in toc.H]
         b = np.array([1.0 / len(validInitialStates) * (i in validInitialStates) for i in range(tocpomdp.n)])
         s = rnd.choice(validInitialStates)
 
         for t in toc.T:
             print("Time Remaining:   %i" % (len(toc.T) - 1 - t))
-            print("Belief:           %s" % (str(["%s: %.2f" % (str(tocpomdp.states[i]), b[i]) for i in range(tocpomdp.n) if b[i] > 0.0])))
             print("True State:       %s" % (str(tocpomdp.states[s])))
+            print("Belief:           %s" % (str(["%s: %.2f" % (str(tocpomdp.states[i]), b[i]) for i in range(tocpomdp.n) if b[i] > 0.0])))
 
-            a = take_action(tocpomdp, Gamma, pi, b)
+            a, v = take_action(tocpomdp, Gamma, pi, b)
             sp = transition_state(tocpomdp, s, a)
             o = make_observation(tocpomdp, a, sp)
             b = update_belief(tocpomdp, b, a, o)
             s = sp
 
+            print("Value at Belief:  %.3f" % (v))
             print("Action Taken:     %s" % (tocpomdp.actions[a]))
             print("Observation Made: %s" % (tocpomdp.observations[o]))
             print("------------------------------------------------")

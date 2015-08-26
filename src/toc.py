@@ -44,9 +44,25 @@ class ToC(object):
         self.C = dict()
 
         if randomize is not None and len(randomize) == 4:
-            self.random(randomize[0], randomize[1], randomize[2], randomize[3])
+            self.random(h=randomize[0], m=randomize[1], o=randomize[2], t=randomize[3])
 
-    def random(self, nh=2, nm=2, no=2, nt=5):
+    def random(self, v="v2", h=2, m=2, o=2, t=5):
+        """ Define a ToC problem using a random version.
+
+            Parameters:
+                v   --  The version: "v1" or "v2".
+                h  --  The number of of human states.
+                m  --  The number of messages.
+                o  --  The number of observations.
+                t  --  The number of time steps (tau).
+        """
+
+        if v == "v1":
+            self._random_v1(h, m, o, t)
+        elif v == "v2":
+            self._random_v2(h, m, o, t)
+
+    def _random_v1(self, nh=2, nm=2, no=2, nt=5):
         """ Define a ToC problem using a random with an optional assignment of set sizes.
 
             Parameters:
@@ -117,20 +133,94 @@ class ToC(object):
                 for t in self.T:
                     msgCost = rnd.uniform(0.25, 1.0) * 10.0
 
-                    # It doesn't matter which of the new messages you send; they are only
-                    # dependent on the previous message and how long it has been since you've
-                    # sent it.
-                    for mp in self.M:
-                        # NOP costs nothing.
-                        if mp == "nop":
-                            self.C[(h, m, t, mp)] = 0.0
+                    # Messages cost more for lower-indexes, but all of them degrade in
+                    # cost over time. This, however, has zero cost if there is no chance
+                    # of transfer, since that would represent the human not even being
+                    # aware of the message. Hence, this 'cost' (human annoyance level)
+                    # is obviously zero.
+                    msgCost += abs((i + 1) / len(self.M) - (len(self.T) - t) / len(self.T)) + 0.01
+                    msgCost *= (self.Pc[(h, m, t)] > 0.0)
+                    self.C[(h, m, t)] = msgCost
 
-                        # Other messages cost more for lower-indexes, but all of them degrade in
-                        # cost over time.
-                        if mp != "nop":
-                            # Messages with a lower index cost more.
-                            msgCost += abs((i + 1) / len(self.M) - (len(self.T) - t) / len(self.T))
-                            self.C[(h, m, t, mp)] = msgCost + 0.01
+    def _random_v2(self, nh=2, nm=2, no=2, nt=5):
+        """ Define a ToC problem using a random with an optional assignment of set sizes.
+
+            Parameters:
+                nh  --  The number of of human states.
+                nm  --  The number of messages.
+                no  --  The number of observations.
+                nt  --  The number of time steps (tau).
+        """
+
+        self.H = ["h%i" % (i) for i in range(nh)]
+        self.M = ["m%i" % (i) for i in range(nm)] + ["nop"]
+        self.O = ["o%i" % (i) for i in range(no)]
+        self.T = [int(i) for i in range(nt + 1)]
+
+        for k, h in enumerate(self.H):
+            for i, m in enumerate(self.M):
+                for t in self.T:
+                    # NOP has a uniform random noise chance of transitioning
+                    # the human state around. Or, if there were more messages
+                    # than human states, then they change the state at random.
+                    if m == "nop" or i > k:
+                        values = [rnd.random() for hp in self.H]
+                        norm = sum(values)
+
+                        for j, hp in enumerate(self.H):
+                            self.Ph[(h, m, t, hp)] = values[j] / norm
+
+                    # Otherwise, each message type has a high likelihood of
+                    # transitioning the human to the corresponding human state.
+                    else:
+                        values = [rnd.random() + float(len(self.H) * int(i == j)) for j, hp in enumerate(self.H)]
+                        norm = sum(values)
+
+                        for j, hp in enumerate(self.H):
+                            self.Ph[(h, m, t, hp)] = values[j] / norm
+
+        for j, h in enumerate(self.H):
+            for i, m in enumerate(self.M):
+                #values = [rnd.uniform(0.0, 0.25) / pow(float(t + 1), float(i) * 3.0 / float(len(self.M)) + 0.25) for t in self.T]
+                values = [rnd.uniform(0.5 * float(t) / float(len(self.T)), \
+                                      0.5 * float((t + 1)) / float(len(self.T))) for t in self.T]
+                values = sorted(values, reverse=True)
+
+                for t in self.T:
+                    # The probability of transferring control slowly decreases over time.
+                    # Messages with lower index raise this probability, but cost much more.
+                    # Also, the lower human state index, the better chance of transferring
+                    # control; i.e., this is desired.
+                    if values[t] > 0.3:
+                        self.Pc[(h, m, t)] = values[t] * float(pow(len(self.M) - 1 - i, 2)) / float(pow(len(self.M), 2)) * float(len(self.H) - j) / float(len(self.H))
+                    else:
+                        self.Pc[(h, m, t)] = 0.0
+
+        for i, h in enumerate(self.H):
+            # Note: It is much more likely to make a particular observation if the human
+            # is in a particular state. If there are more human states than observations,
+            # then some human states we will always be very uncertain about. Conversely,
+            # if there are more observations than human states, then we will make
+            # quasi-uniformly weaker observations about human states.
+            values = [rnd.random() + float(len(self.O) * int(i == j)) for j, o in enumerate(self.O)]
+            norm = sum(values)
+
+            for i, o in enumerate(self.O):
+                self.Po[(h, o)] = values[i] / norm
+
+        for h in self.H:
+            for i, m in enumerate(self.M):
+                for t in self.T:
+                    msgCost = rnd.uniform(0.25, 1.0) * 10.0
+
+                    # Messages cost more for lower-indexes, but all of them degrade in
+                    # cost over time. This, however, has zero cost if there is no chance
+                    # of transfer, since that would represent the human not even being
+                    # aware of the message. Hence, this 'cost' (human annoyance level)
+                    # is obviously zero.
+                    msgCost += abs((i + 1) / len(self.M) - (len(self.T) - t) / len(self.T)) + 0.01
+                    msgCost *= (self.Pc[(h, m, t)] > 0.0)
+                    self.C[(h, m, t)] = msgCost
 
     def __str__(self):
         """ Convert this ToC object to a string representation.
@@ -159,9 +249,9 @@ class ToC(object):
             result += "(%s, %s): %.3f\n" % (h, o, self.Po[(h, o)])
         result += "\n"
 
-        result += "C(h, m, t, m'):\n"
-        for h, m, t, mp in it.product(self.H, self.M, self.T, self.M):
-            result += "(%s, %s, %i, %s): %.3f\n" % (h, m, t, mp, self.C[(h, m, t, mp)])
+        result += "C(h, m, t):\n"
+        for h, m, t in it.product(self.H, self.M, self.T):
+            result += "(%s, %s, %i): %.3f\n" % (h, m, t, self.C[(h, m, t)])
         result += "\n"
 
         return result
