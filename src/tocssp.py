@@ -63,16 +63,14 @@ class ToCSSP(MDP):
 
         return np.array([3.0, 2.0, 1.0]) / 6.0
 
-    def create(self, toc, path):
+    def create(self, toc, tocpomdp, path):
         """ Create the MDP SSP given the ToC's path planning problem and the ToC problem itself.
 
             Parameters:
-                toc     --  The transfer of control problems, a pair, two of them: h->v and v->h.
-                path    --  The weighted directed graph: (V, E, w, v0, vg).
+                toc         --  The transfer of control problems, a pair, two of them: h->v and v->h.
+                tocpomdp    --  The POMDPs, a pair, two of them: h->v and v->h.
+                path        --  The weighted directed graph: (V, E, w, v0, vg).
         """
-
-        # TODO: Implement.
-        tocpomdp = None
 
         calE = ["success", "failure", "aborted"]
         X = ["human", "vehicle"]
@@ -113,7 +111,8 @@ class ToCSSP(MDP):
             if state not in calE:
                 v = state[0]
                 x = state[1]
-                rho = self._compute_rho(tocpomdp, int(path.w[v]))
+                xIndex = X.index(x)
+                rho = self._compute_rho(tocpomdp[xIndex], int(path.w[v]))
 
             for a, action in enumerate(self.actions):
                 ad = action[0]
@@ -134,8 +133,8 @@ class ToCSSP(MDP):
                             v != path.vg and \
                             direction_exists(v, ad) and \
                             ac == "switch" and \
-                            direction_matches_edge(v, vp, ad) and \
-                            (v, vp) in path.E and x != xp:
+                            (v, vp) in path.E and x != xp and \
+                            direction_matches_edge(v, vp, ad):
                         S[s][a][cur] = sp
                         T[s][a][cur] = rho[0]
                         cur += 1
@@ -146,8 +145,8 @@ class ToCSSP(MDP):
                             v != path.vg and \
                             direction_exists(v, ad) and \
                             ac == "switch" and \
-                            direction_matches_edge(v, vp, ad) and \
-                            (v, vp) in path.E and x == xp:
+                            (v, vp) in path.E and x == xp and \
+                            direction_matches_edge(v, vp, ad):
                         S[s][a][cur] = sp
                         T[s][a][cur] = rho[1]
                         cur += 1
@@ -192,7 +191,7 @@ class ToCSSP(MDP):
                         T[s][a][cur] = 1.0
                         cur += 1
 
-                    # Reached a road that is not autonomy-capable, but vechile is in control. Death.
+                    # Reached a road that is not autonomy-capable, but vehicle is in control. Death.
                     if state not in calE and statePrime == "failure" and \
                             v not in path.Vac and x == "vehicle":
                         S[s][a][cur] = sp
@@ -227,17 +226,17 @@ class ToCSSP(MDP):
                 ac = action[1]
 
                 # Normal cost of being on a road.
-                if state not in calE and not (v in path.Vap and x == "human"):
-                    R[s][a] = -path.w[v]
+                if state not in calE and v in path.Vap and x == "vehicle":
+                    R[s][a] = -path.w[v] + epsilon
 
                 # Extra penalty included on a normal road which is autonomy-preferred but
                 # the human is driving.
-                if state not in calE and v in path.Vap and x == "human":
-                    R[s][a] = -path.w[v] - epsilon
+                if state not in calE and not (v in path.Vap and x == "vehicle"):
+                    R[s][a] = -path.w[v]
 
                 # Constant for the absorbing 'failure' state.
                 if state in calE:
-                    R[s][a] = -wmax - epsilon
+                    R[s][a] = -wmax
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()
@@ -246,21 +245,35 @@ class ToCSSP(MDP):
 
         self.R = array_type_nm_float(*np.array(R).flatten())
 
+        self.gamma = 0.9 # 1.0 -- TODO: Change once you implement LAO*.
+        self.horizon = len(path.V) + 1
+
+        self.s0 = 0
+        self.goals = [len(self.states) - 3] # First of last three absorbing.
+
 
 if __name__ == "__main__":
     print("Performing ToCSSP Unit Test...")
 
-    tocHtoV = ToC(randomize=(2, 2, 2, 5))
-    tocVtoH = ToC(randomize=(2, 2, 2, 5))
+    tocHtoV = ToC(randomize=(2, 2, 2, 10))
+    tocVtoH = ToC(randomize=(2, 2, 2, 10))
     toc = (tocHtoV, tocVtoH)
 
+    tocpomdpHtoV = None
+    tocpomdpVtoH = None
+    tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
+
     tocpath = ToCPath()
-    tocpath.create()
+    tocpath.create(numVertexes=10)
     print(tocpath)
 
     tocssp = ToCSSP()
-    tocssp.create(toc, tocpath)
+    tocssp.create(toc, tocpomdp, tocpath)
     print(tocssp)
+
+    V, pi = tocssp.solve()
+    print(V)
+    print(pi.tolist())
 
     print("Done.")
 
