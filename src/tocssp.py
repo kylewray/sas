@@ -74,7 +74,7 @@ class ToCSSP(MDP):
 
         calE = ["success", "failure", "aborted"]
         X = ["human", "vehicle"]
-        Ad = ["left", "straight", "right"]
+        Ad = ["direction 1", "direction 2", "direction 3"]
         Ac = ["keep", "switch"]
 
         self.states = list(it.product(path.V, X)) + list(calE)
@@ -83,19 +83,12 @@ class ToCSSP(MDP):
         self.actions = list(it.product(Ad, Ac))
         self.m = len(self.actions)
 
-        def direction_matches_edge(v, vp, ad):
-            adIndex = Ad.index(ad)
+        theta = {(v, ad): None for v, ad in it.product(path.V, range(len(Ad)))}
+        for v in path.V:
             vEdges = [e for e in path.E if e[0] == v]
             vEdges = sorted(vEdges, key=lambda z: z[1])
-            try:
-                return vEdges[adIndex][1] == vp
-            except Exception:
-                return False
-
-        def direction_exists(v, ad):
-            adIndex = Ad.index(ad)
-            vEdges = [e for e in path.E if e[0] == v]
-            return adIndex < len(vEdges)
+            for ad, e in enumerate(vEdges):
+                theta[(v, ad)] = e[1]
 
         # The maximum number of successor states is always bounded by 3, because
         # the uncertainty is only ever over the result of the ToC POMDP final
@@ -108,15 +101,19 @@ class ToCSSP(MDP):
             v = None
             x = None
             rho = None
+            aleph = None
             if state not in calE:
                 v = state[0]
                 x = state[1]
                 xIndex = X.index(x)
                 rho = self._compute_rho(tocpomdp[xIndex], int(path.w[v]))
+                aleph = not (v not in path.Vac and x == "vehicle") and v != path.vg
 
             for a, action in enumerate(self.actions):
                 ad = action[0]
                 ac = action[1]
+                adIndex = Ad.index(ad)
+                acIndex = Ac.index(ac)
 
                 cur = 0
 
@@ -129,33 +126,28 @@ class ToCSSP(MDP):
 
                     # Successful transfer of control over current state.
                     if state not in calE and statePrime not in calE and \
-                            not (v not in path.Vac and x == "vehicle") and \
-                            v != path.vg and \
-                            direction_exists(v, ad) and \
+                            aleph and \
+                            theta[(v, adIndex)] == vp and \
                             ac == "switch" and \
-                            (v, vp) in path.E and x != xp and \
-                            direction_matches_edge(v, vp, ad):
+                            x != xp:
                         S[s][a][cur] = sp
                         T[s][a][cur] = rho[0]
                         cur += 1
 
                     # Failed to transfer control over current state, but next state is autonomy-capable.
                     if state not in calE and statePrime not in calE and \
-                            not (v not in path.Vac and x == "vehicle") and \
-                            v != path.vg and \
-                            direction_exists(v, ad) and \
+                            aleph and \
+                            theta[(v, adIndex)] == vp and \
                             ac == "switch" and \
-                            (v, vp) in path.E and x == xp and \
-                            direction_matches_edge(v, vp, ad):
+                            x == xp:
                         S[s][a][cur] = sp
                         T[s][a][cur] = rho[1]
                         cur += 1
 
                     # Aborted transfer of control over current state.
                     if state not in calE and statePrime == "aborted" and \
-                            not (v not in path.Vac and x == "vehicle") and \
-                            v != path.vg and \
-                            direction_exists(v, ad) and \
+                            aleph and \
+                            theta[(v, adIndex)] != None and \
                             ac == "switch":
                         S[s][a][cur] = sp
                         T[s][a][cur] = rho[2]
@@ -163,12 +155,10 @@ class ToCSSP(MDP):
 
                     # Kept current controller. No transfer of control.
                     if state not in calE and statePrime not in calE and \
-                            not (v not in path.Vac and x == "vehicle") and \
-                            v != path.vg and \
-                            direction_exists(v, ad) and \
+                            aleph and \
+                            theta[(v, adIndex)] == vp and \
                             ac == "keep" and \
-                            (v, vp) in path.E and x == xp and \
-                            direction_matches_edge(v, vp, ad):
+                            x == xp:
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
@@ -176,9 +166,8 @@ class ToCSSP(MDP):
                     # Anytime at a non-problem and non-goal state, that the
                     # action doesn't work.. Basically when it is not available.
                     if state not in calE and statePrime == "failure" and \
-                            not (v not in path.Vac and x == "vehicle") and \
-                            v != path.vg and \
-                            not direction_exists(v, ad):
+                            aleph and \
+                            theta[(v, adIndex)] == None:
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
