@@ -51,10 +51,10 @@ class ToC(object):
 
             Parameters:
                 v   --  The version: "v1" or "v2".
-                h  --  The number of of human states.
-                m  --  The number of messages.
-                o  --  The number of observations.
-                t  --  The number of time steps (tau).
+                h   --  The number of of human states.
+                m   --  The number of messages.
+                o   --  The number of observations.
+                t   --  The number of time steps (tau).
         """
 
         if v == "v1":

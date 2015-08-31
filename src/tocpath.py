@@ -35,6 +35,10 @@ class ToCPath(object):
         self.v0 = None
         self.vg = None
 
+        # For visualization purposes, we include a parallel array for each
+        # (x, y) location of the vertexes in V.
+        self.loc = list()
+
     def create(self, numVertexes=3, probAddEdge=0.25, probAutonomyCapable=0.5, probAutonomyPreferred=0.5):
         """ Create a random ToC Path object, given the number of desired vertexes.
 
