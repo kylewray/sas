@@ -30,6 +30,8 @@ import ctypes as ct
 
 import cv2
 
+import time
+
 import os
 import sys
 
@@ -114,7 +116,11 @@ class Interact(object):
 
         self.faceCascade = None
         self.videoCapture = None
-        self.videoFaces = [False for i in range(60)]
+        self.videoFaces = [False for i in range(10)]
+
+        self.videoOutputSDL = None
+        self.videoOutputCam = None
+        self.videoOutputFilePrefix = "video/" + str(int(round(time.time() * 1000)))
 
     def _reset(self):
         """ Reset the belief and other variables so that this can run again. """
@@ -269,9 +275,27 @@ class Interact(object):
             if self.videoCapture is not None and self.videoCapture.isOpened():
                 ret, frame = self.videoCapture.read()
                 grayscaleFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
                 faces = self.faceCascade.detectMultiScale(grayscaleFrame, scaleFactor=1.1, minNeighbors=5,
                                                     minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
                 self.videoFaces = [len(faces) > 0] + self.videoFaces[:-1]
+
+                #print(type(frame))
+                #print(frame.dtype)
+                #print(frame.shape)
+
+                #surface = sdl2.SDL_GetWindowSurface(self.window.window)
+                #print(type(surface))
+                #rawPixels = sdl2.ext.pixels3d(surface)
+                #sdl2.SDL_FreeSurface(surface)
+
+                if self.videoOutputSDL is not None:
+                    self.videoOutputCam.write(frame)
+
+                if self.videoOutputCam is not None:
+                    for (x, y, w, h) in faces:
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    self.videoOutputCam.write(frame)
 
             # Perform the update but only every so often.
             currentTime = sdl2.SDL_GetTicks()
@@ -309,6 +333,12 @@ class Interact(object):
 
     def _uninitialize_cv(self):
         """ Uninitialize the OpenCV objects. """
+
+        if self.videoOutputSDL is not None:
+            self.videoOutputSDL.release()
+
+        if self.videoOutputCam is not None:
+            self.videoOutputCam.release()
 
         self.videoCapture.release()
 
@@ -593,7 +623,6 @@ class Interact(object):
                                                          self.failureText.size[1]))
 
         elif self.beliefFactorEndResultState == "aborted":
-            #LP_c_short = ct.POINTER(ct.c_int16)
             array_4_short = ct.c_int16 * (4)
             x = array_4_short(*np.array([int(self.width / 2),
                                          int(self.width / 2 + size),
@@ -658,13 +687,40 @@ class Interact(object):
                 self.running = False
 
             if event.key.keysym.sym == sdl2.SDLK_RETURN:
+                if self.navigating:
+                    print("Executing Transfer of Control...")
                 self.navigating = False
 
             if event.key.keysym.sym == sdl2.SDLK_SPACE:
                 self.paused = not self.paused
+                if self.paused:
+                    print("Interact Experiment: Paused.")
+                else:
+                    print("Interact Experiment: Unpaused.")
 
             if event.key.keysym.sym == sdl2.SDLK_r:
                 self._reset()
+                print("Reset interact experiment.")
+
+            if event.key.keysym.sym == sdl2.SDLK_s:
+                if self.videoOutputSDL is None and self.videoOutputCam is None:
+                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                    self.videoOutputSDL = cv2.VideoWriter(self.videoOutputFilePrefix + "_sdl.avi", fourcc, 20.0, (640, 480))
+
+                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                    self.videoOutputCam = cv2.VideoWriter(self.videoOutputFilePrefix + "_cam.avi", fourcc, 20.0, (640, 480))
+
+                    print("Video Output: Enabled.")
+                else:
+                    if self.videoOutputSDL is not None:
+                        self.videoOutputSDL.release()
+                    self.videoOutputSDL = None
+
+                    if self.videoOutputCam is not None:
+                        self.videoOutputCam.release()
+                    self.videoOutputCam = None
+
+                    print("Video Output: Disabled.")
 
             navChoices = list()
 
