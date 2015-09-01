@@ -216,10 +216,10 @@ class ToCPOMDP(POMDP):
         self.horizon = len(toc.T) * 10
 
         #self.expand(method='random', numBeliefsToAdd=100)
-        #for i in range(3):
-        #    self.expand(method='distinct_beliefs')
-        for i in range(30):
-            self.expand(method='pema')
+        for i in range(5):
+            self.expand(method='distinct_beliefs')
+        #for i in range(len(toc.T) * 5):
+        #    self.expand(method='pema')
 
 
 if __name__ == "__main__":

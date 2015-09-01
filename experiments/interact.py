@@ -87,7 +87,7 @@ class Interact(object):
         self.navigating = True
         self.navDirections = ["straight" for i in range(5)]
 
-        self.initialDelay = 1000
+        self.initialDelay = 3000
         self.initialDelayTime = 0
 
         self.paused = True
@@ -118,7 +118,6 @@ class Interact(object):
         self.videoCapture = None
         self.videoFaces = [False for i in range(10)]
 
-        self.videoOutputSDL = None
         self.videoOutputCam = None
         self.videoOutputFilePrefix = "video/" + str(int(round(time.time() * 1000)))
 
@@ -151,8 +150,8 @@ class Interact(object):
 
         print("Initializing...")
 
-        self.toc = ToC(randomize=(2, 2, 2, 3))
-        #self.toc = ToCInteract()
+        #self.toc = ToC(randomize=(2, 2, 2, 3))
+        self.toc = ToCInteract(nt=10)
 
         # TODO: Implement the path code.
         #self.tocpath = ToCPathInteract()
@@ -280,18 +279,6 @@ class Interact(object):
                                                     minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
                 self.videoFaces = [len(faces) > 0] + self.videoFaces[:-1]
 
-                #print(type(frame))
-                #print(frame.dtype)
-                #print(frame.shape)
-
-                #surface = sdl2.SDL_GetWindowSurface(self.window.window)
-                #print(type(surface))
-                #rawPixels = sdl2.ext.pixels3d(surface)
-                #sdl2.SDL_FreeSurface(surface)
-
-                if self.videoOutputSDL is not None:
-                    self.videoOutputCam.write(frame)
-
                 if self.videoOutputCam is not None:
                     for (x, y, w, h) in faces:
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -333,9 +320,6 @@ class Interact(object):
 
     def _uninitialize_cv(self):
         """ Uninitialize the OpenCV objects. """
-
-        if self.videoOutputSDL is not None:
-            self.videoOutputSDL.release()
 
         if self.videoOutputCam is not None:
             self.videoOutputCam.release()
@@ -436,9 +420,9 @@ class Interact(object):
         # Finally, if we still have time left, then use OpenCV to detect the human state.
         elif self.beliefFactorTimeRemaining is not None and self.beliefFactorTimeRemaining > 0:
             if sum(self.videoFaces) > len(self.videoFaces) / 2:
-                self.observation = self.tocpomdp.observations[0] # "attentive"
+                self.observation = "attentive" # self.tocpomdp.observations[0] # "attentive"
             else:
-                self.observation = self.tocpomdp.observations[1] # "distracted"
+                self.observation = "distracted" # self.tocpomdp.observations[1] # "distracted"
 
         self.observationIndex = self.tocpomdp.observations.index(self.observation)
 
@@ -538,9 +522,9 @@ class Interact(object):
                                   100, 100, 100, 255)
 
         # Render the blinking light and text message.
-        if self.action == "m0":
-            if sdl2.sdlmixer.Mix_PlayingMusic() == 0:
-                sdl2.sdlmixer.Mix_PlayMusic(self.audioRequestControl, 1)
+        if self.action == "visual":
+            #if sdl2.sdlmixer.Mix_PlayingMusic() == 0:
+            #    sdl2.sdlmixer.Mix_PlayMusic(self.audioRequestControl, 1)
 
             sdl2.sdlgfx.boxRGBA(self.renderer.renderer,
                                     int(self.width / 2 - self.messageText.size[0] / 2 - 30), int(self.height / 2 - self.messageText.size[1] / 2 - 30),
@@ -556,7 +540,7 @@ class Interact(object):
                                                          self.messageText.size[0],
                                                          self.messageText.size[1]))
 
-        elif self.action == "m1":
+        elif self.action == "visual and auditory":
             if sdl2.sdlmixer.Mix_PlayingMusic() == 0:
                 sdl2.sdlmixer.Mix_PlayMusic(self.audioRequestControl, 1)
 
@@ -703,21 +687,13 @@ class Interact(object):
                 print("Reset interact experiment.")
 
             if event.key.keysym.sym == sdl2.SDLK_s:
-                if self.videoOutputSDL is None and self.videoOutputCam is None:
-                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                    self.videoOutputSDL = cv2.VideoWriter(self.videoOutputFilePrefix + "_sdl.avi", fourcc, 20.0, (640, 480))
-
+                if self.videoOutputCam is None:
                     fourcc = cv2.VideoWriter_fourcc(*'XVID')
                     self.videoOutputCam = cv2.VideoWriter(self.videoOutputFilePrefix + "_cam.avi", fourcc, 20.0, (640, 480))
 
                     print("Video Output: Enabled.")
                 else:
-                    if self.videoOutputSDL is not None:
-                        self.videoOutputSDL.release()
-                    self.videoOutputSDL = None
-
-                    if self.videoOutputCam is not None:
-                        self.videoOutputCam.release()
+                    self.videoOutputCam.release()
                     self.videoOutputCam = None
 
                     print("Video Output: Disabled.")
