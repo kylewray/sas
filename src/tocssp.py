@@ -47,7 +47,8 @@ class ToCSSP(MDP):
 
         self.states = list()
         self.actions = list()
-        self.observations = list()
+
+        self.theta = None
 
     def _compute_rho(self, tocpomdp, sWeight):
         """ Compute the probabilities of reaching terminal `end result' states.
@@ -74,7 +75,7 @@ class ToCSSP(MDP):
 
         calE = ["success", "failure", "aborted"]
         X = ["human", "vehicle"]
-        Ad = ["direction 1", "direction 2", "direction 3"]
+        Ad = ["direction %i" % (i) for i in range(path.maxOutgoingDegree)]
         Ac = ["keep", "switch"]
 
         self.states = list(it.product(path.V, X)) + list(calE)
@@ -83,12 +84,12 @@ class ToCSSP(MDP):
         self.actions = list(it.product(Ad, Ac))
         self.m = len(self.actions)
 
-        theta = {(v, ad): None for v, ad in it.product(path.V, range(len(Ad)))}
+        self.theta = {(v, ad): None for v, ad in it.product(path.V, Ad)}
         for v in path.V:
             vEdges = [e for e in path.E if e[0] == v]
             vEdges = sorted(vEdges, key=lambda z: z[1])
-            for ad, e in enumerate(vEdges):
-                theta[(v, ad)] = e[1]
+            for adIndex, e in enumerate(vEdges):
+                self.theta[(v, Ad[adIndex])] = e[1]
 
         # The maximum number of successor states is always bounded by 3, because
         # the uncertainty is only ever over the result of the ToC POMDP final
@@ -100,20 +101,29 @@ class ToCSSP(MDP):
         for s, state in enumerate(self.states):
             v = None
             x = None
-            rho = None
-            aleph = None
             if state not in calE:
                 v = state[0]
                 x = state[1]
                 xIndex = X.index(x)
-                rho = self._compute_rho(tocpomdp[xIndex], int(path.w[v]))
-                aleph = not (v not in path.Vac and x == "vehicle") and v != path.vg
 
             for a, action in enumerate(self.actions):
                 ad = action[0]
                 ac = action[1]
                 adIndex = Ad.index(ad)
                 acIndex = Ac.index(ac)
+
+                e = None
+                aleph = None
+                rho = None
+                if state not in calE:
+                    e = (v, self.theta[(v, ad)])
+                    aleph = not (e not in path.Eac and x == "vehicle") and v != path.vg
+                    try:
+                        # This will only fail for e = theta returning a None for the impossible
+                        # action. This essentially handles the A(s) case.
+                        rho = self._compute_rho(tocpomdp[xIndex], int(path.w[e]))
+                    except KeyError:
+                        pass
 
                 cur = 0
 
@@ -127,7 +137,7 @@ class ToCSSP(MDP):
                     # Successful transfer of control over current state.
                     if state not in calE and statePrime not in calE and \
                             aleph and \
-                            theta[(v, adIndex)] == vp and \
+                            self.theta[(v, ad)] == vp and \
                             ac == "switch" and \
                             x != xp:
                         S[s][a][cur] = sp
@@ -137,7 +147,7 @@ class ToCSSP(MDP):
                     # Failed to transfer control over current state, but next state is autonomy-capable.
                     if state not in calE and statePrime not in calE and \
                             aleph and \
-                            theta[(v, adIndex)] == vp and \
+                            self.theta[(v, ad)] == vp and \
                             ac == "switch" and \
                             x == xp:
                         S[s][a][cur] = sp
@@ -147,7 +157,7 @@ class ToCSSP(MDP):
                     # Aborted transfer of control over current state.
                     if state not in calE and statePrime == "aborted" and \
                             aleph and \
-                            theta[(v, adIndex)] != None and \
+                            self.theta[(v, ad)] != None and \
                             ac == "switch":
                         S[s][a][cur] = sp
                         T[s][a][cur] = rho[2]
@@ -156,7 +166,7 @@ class ToCSSP(MDP):
                     # Kept current controller. No transfer of control.
                     if state not in calE and statePrime not in calE and \
                             aleph and \
-                            theta[(v, adIndex)] == vp and \
+                            self.theta[(v, ad)] == vp and \
                             ac == "keep" and \
                             x == xp:
                         S[s][a][cur] = sp
@@ -164,17 +174,18 @@ class ToCSSP(MDP):
                         cur += 1
 
                     # Anytime at a non-problem and non-goal state, that the
-                    # action doesn't work.. Basically when it is not available.
+                    # action doesn't work.. Basically when it is not available
+                    # following A(s).
                     if state not in calE and statePrime == "failure" and \
                             aleph and \
-                            theta[(v, adIndex)] == None:
+                            self.theta[(v, ad)] == None:
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
 
                     # Reached goal. Successfully reached success state!
                     if state not in calE and statePrime == "success" and \
-                            not (v not in path.Vac and x == "vehicle") and \
+                            not (e not in path.Eac and x == "vehicle") and \
                             v == path.vg:
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
@@ -182,7 +193,7 @@ class ToCSSP(MDP):
 
                     # Reached a road that is not autonomy-capable, but vehicle is in control. Death.
                     if state not in calE and statePrime == "failure" and \
-                            v not in path.Vac and x == "vehicle":
+                            e not in path.Eac and x == "vehicle":
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
@@ -199,8 +210,8 @@ class ToCSSP(MDP):
         self.S = array_type_nmns_int(*np.array(S).flatten())
         self.T = array_type_nmns_float(*np.array(T).flatten())
 
-        epsilon = 1.0
-        wmax = max(path.w)
+        epsilon = 0.0001
+        wmax = max(path.w.values())
 
         R = [[0.0 for a in range(self.m)] for s in range(self.n)]
         for s, state in enumerate(self.states):
@@ -213,15 +224,26 @@ class ToCSSP(MDP):
             for a, action in enumerate(self.actions):
                 ad = action[0]
                 ac = action[1]
+                adIndex = Ad.index(ad)
+                acIndex = Ac.index(ac)
+
+                e = None
+                if state not in calE:
+                    e = (v, self.theta[(v, ad)])
+
+                    # Handle the A(s) case, which sets the penalty to an impossibly large number.
+                    if self.theta[(v, ad)] == None:
+                        R[s][a] = -wmax * self.n
+                        continue
 
                 # Normal cost of being on a road.
-                if state not in calE and v in path.Vap and x == "vehicle":
-                    R[s][a] = -path.w[v] + epsilon
+                if state not in calE and e in path.Eap and x == "vehicle":
+                    R[s][a] = -path.w[e] + epsilon
 
                 # Extra penalty included on a normal road which is autonomy-preferred but
                 # the human is driving.
-                if state not in calE and not (v in path.Vap and x == "vehicle"):
-                    R[s][a] = -path.w[v]
+                if state not in calE and not (e in path.Eap and x == "vehicle"):
+                    R[s][a] = -path.w[e]
 
                 # Constant for the absorbing 'failure' state.
                 if state in calE:
@@ -252,15 +274,27 @@ if __name__ == "__main__":
     tocpomdpVtoH = None
     tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
 
+    print("Creating the ToC Path... ", end='')
+    sys.stdout.flush()
+
     tocpath = ToCPath()
-    tocpath.create(numVertexes=10)
-    print(tocpath)
+    tocpath.random(numVertexes=10)
+
+    print("Done.\nCreating the ToC SSP... ", end='')
+    sys.stdout.flush()
 
     tocssp = ToCSSP()
     tocssp.create(toc, tocpomdp, tocpath)
-    print(tocssp)
+
+    print("Done.\nSolving the ToC SSP... ", end='')
+    sys.stdout.flush()
 
     V, pi = tocssp.solve()
+
+    print("Done.\nResults:")
+
+    print(tocpath)
+    print(tocssp)
     print(V)
     print(pi.tolist())
 

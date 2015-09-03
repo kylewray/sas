@@ -165,7 +165,7 @@ class ToCPOMDP(POMDP):
                 # than failure though.
                 if state not in calE and action == "abort":
                     if state[0] > 0:
-                        R[s][a] = -Cmax #-Cmax# * len(toc.T)
+                        R[s][a] = -self.n * Cmax #-Cmax# * len(toc.T)
                     else:
                         R[s][a] = 0.0
 

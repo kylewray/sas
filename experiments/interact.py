@@ -41,6 +41,9 @@ sys.path.append(thisFilePath)
 from additional_functions import *
 from tocinteract import *
 
+sys.path.append(os.path.join(thisFilePath, "..", "..", "losm", "python"))
+from losm.converter import *
+
 sys.path.append(os.path.join(thisFilePath, "..", "src"))
 from toc import *
 from tocpomdp import *
@@ -60,6 +63,7 @@ class Interact(object):
 
         self.width = width
         self.height = height
+        self.fullscreen = False
 
         self.window = None
         self.renderer = None
@@ -87,7 +91,7 @@ class Interact(object):
         self.navigating = True
         self.navDirections = ["straight" for i in range(5)]
 
-        self.initialDelay = 3000
+        self.initialDelay = 0000
         self.initialDelayTime = 0
 
         self.paused = True
@@ -121,6 +125,15 @@ class Interact(object):
         self.videoOutputCam = None
         self.videoOutputFilePrefix = "video/" + str(int(round(time.time() * 1000)))
 
+    def load_nav(self, osmXMLFile):
+        """ Optionally, load an OSM XML file and implement working navigation.
+
+            Parameters:
+                osmXMLFile  --  An OSM XML file to load.
+        """
+
+        pass
+
     def _reset(self):
         """ Reset the belief and other variables so that this can run again. """
 
@@ -150,8 +163,8 @@ class Interact(object):
 
         print("Initializing...")
 
-        #self.toc = ToC(randomize=(2, 2, 2, 3))
-        self.toc = ToCInteract(nt=10)
+        #self.toc = ToC(randomize=(2, 2, 2, 6))
+        self.toc = ToCInteract(nt=6)
 
         # TODO: Implement the path code.
         #self.tocpath = ToCPathInteract()
@@ -177,19 +190,25 @@ class Interact(object):
     def _initialize_sdl(self):
         """ Initialize the core components of SDL, the window, and the renderer. """
 
+        print("Initializing SDL... ", end='')
+        sys.stdout.flush()
+
         sdl2.ext.init()
 
-        self.window = sdl2.ext.Window("SAS - ToC POMDP - Interact", size=(self.width, self.height))
+        self.window = sdl2.ext.Window("SAS - ToC POMDP - Interact",
+                                        size=(self.width, self.height))
         self.window.show()
 
         self.renderer = sdl2.ext.Renderer(self.window)
 
         sdl2.SDL_ShowCursor(False)
 
+        print("Done.")
+
     def _initialize_textures(self):
         """ Initialize textures. Must be called after the renderer is created. """
 
-        print("Loading Textures...", end='')
+        print("Initializing Textures... ", end='')
         sys.stdout.flush()
 
         self.spriteFactory = sdl2.ext.SpriteFactory(renderer=self.renderer)
@@ -229,11 +248,19 @@ class Interact(object):
     def _initialize_audio(self):
         """ Initialize audio and load wav files. Must be called after SDL has been initialized. """
 
+        print("Initializing Audio... ", end='')
+        sys.stdout.flush()
+
         sdl2.sdlmixer.Mix_OpenAudio(22050, sdl2.sdlmixer.MIX_DEFAULT_FORMAT, 2, 4096)
         self.audioRequestControl = sdl2.sdlmixer.Mix_LoadMUS(b"audio/request.mp3")
 
+        print("Done.")
+
     def _initialize_cv(self):
         """ Initialize the computer vision components. """
+
+        print("Initializing CV... ", end='')
+        sys.stdout.flush()
 
         cascadePath = "cv/haar_frontface_default.xml"
         videoDeviceIndex = 1
@@ -243,6 +270,8 @@ class Interact(object):
 
         if not self.videoCapture.isOpened():
             print("Warning: Failed to open the video capture device.")
+
+        print("Done.")
 
     def execute(self):
         """ The main execution loop of the program. """
@@ -268,6 +297,7 @@ class Interact(object):
 
                 self._check_keyboard(event)
                 self._check_mouse(event)
+                self._check_touch(event)
 
             # Get the updated frame of the video and get the faces, assuming the object was
             # created successfully.
@@ -321,32 +351,55 @@ class Interact(object):
     def _uninitialize_cv(self):
         """ Uninitialize the OpenCV objects. """
 
+        print("Uninitializing CV... ", end='')
+        sys.stdout.flush()
+
         if self.videoOutputCam is not None:
             self.videoOutputCam.release()
 
         self.videoCapture.release()
 
+        print("Done.")
+
     def _uninitialize_audio(self):
         """ Uninitialize the audio. """
+
+        print("Uninitializing Audio... ", end='')
+        sys.stdout.flush()
 
         sdl2.sdlmixer.Mix_FreeMusic(self.audioRequestControl)
         sdl2.sdlmixer.Mix_CloseAudio()
 
+        print("Done.")
+
     def _uninitialize_textures(self):
         """ Uninitialize the textures. """
+
+        print("Uninitializing Textures... ", end='')
+        sys.stdout.flush()
 
         self.tocFontManager.close()
         self.navFontManager.close()
 
+        print("Done.")
+
     def _uninitialize_sdl(self):
         """ Uninitialize SDL, the window, and the renderer. """
 
+        print("Uninitializing SDL... ", end='')
+        sys.stdout.flush()
+
         sdl2.ext.quit()
+
+        print("Done.")
 
     def _uninitialize_toc(self):
         """ Uninitialize the ToC POMDP and other variables. """
 
-        pass
+        print("Uninitializing ToC... ", end='')
+        sys.stdout.flush()
+
+        print("Done.")
 
     def _update_nav(self):
         """ Update the navigation following the SSP. """
@@ -513,12 +566,12 @@ class Interact(object):
         sdl2.sdlgfx.filledPieRGBA(self.renderer.renderer,
                                   int(self.width / 2), int(self.height / 2),
                                   int(min(self.width, self.height) / 3),
-                                  0, int(360.0 * (total / maximal)),
+                                  -90, int(360.0 * (total / maximal)) - 90,
                                   20, 20, 20, 255)
         sdl2.sdlgfx.pieRGBA(self.renderer.renderer,
                                   int(self.width / 2), int(self.height / 2),
                                   int(min(self.width, self.height) / 3),
-                                  0, int(360.0 * (total / maximal)),
+                                  -90, int(360.0 * (total / maximal)) - 90,
                                   100, 100, 100, 255)
 
         # Render the blinking light and text message.
@@ -675,7 +728,23 @@ class Interact(object):
                     print("Executing Transfer of Control...")
                 self.navigating = False
 
+            if event.key.keysym.sym == sdl2.SDLK_f:
+                self.fullscreen = not self.fullscreen
+                if self.fullscreen:
+                    sdl2.SDL_SetWindowFullscreen(self.window.window,
+                                                #sdl2.SDL_WINDOW_FULLSCREEN)
+                                                sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP)
+                else:
+                    sdl2.SDL_SetWindowFullscreen(self.window.window, 0)
+
             if event.key.keysym.sym == sdl2.SDLK_SPACE:
+                if self.navigating:
+                    # Do nothing yet if navigating.
+                    pass
+                else:
+                    self.buttonPressed = True
+
+            if event.key.keysym.sym == sdl2.SDLK_p:
                 self.paused = not self.paused
                 if self.paused:
                     print("Interact Experiment: Paused.")
@@ -722,7 +791,22 @@ class Interact(object):
                 event   --  The event provided.
         """
 
-        if event.type == sdl2.SDL_MOUSEBUTTONUP:
+        if event.type == sdl2.SDL_MOUSEBUTTONDOWN or event.type == sdl2.SDL_MOUSEBUTTONUP:
+            if self.navigating:
+                # Do nothing yet if navigating.
+                pass
+            else:
+                self.buttonPressed = True
+
+    def _check_touch(self, event):
+        """ Check the touch input given the event.
+
+            Parameters:
+                event   --  The event provided.
+        """
+
+        if event.type == sdl2.SDL_FINGERDOWN or event.type == sdl2.SDL_FINGERUP or \
+                event.type == sdl2.SDL_FINGERMOTION:
             if self.navigating:
                 # Do nothing yet if navigating.
                 pass
@@ -734,6 +818,10 @@ if __name__ == "__main__":
     print("Executing Interact Experiment...")
 
     interact = Interact()
+
+    if len(sys.argv) == 2:
+        interact.load_nav(sys.argv[1])
+
     interact.execute()
 
     print("Done.")

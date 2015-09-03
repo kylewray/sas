@@ -21,6 +21,16 @@
 """
 
 import random as rnd
+import itertools as it
+
+import os
+import sys
+
+thisFilePath = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(thisFilePath)
+
+sys.path.append(os.path.join(thisFilePath, "..", "..", "losm", "python", "losm", "converter"))
+from losm_converter import *
 
 
 class ToCPath(object):
@@ -31,6 +41,8 @@ class ToCPath(object):
 
         self.V = list()
         self.E = list()
+        self.Eac = list()
+        self.Eap = list()
         self.w = dict()
         self.v0 = None
         self.vg = None
@@ -39,7 +51,60 @@ class ToCPath(object):
         # (x, y) location of the vertexes in V.
         self.loc = list()
 
-    def create(self, numVertexes=3, probAddEdge=0.25, probAutonomyCapable=0.5, probAutonomyPreferred=0.5):
+        # The max degree over all the vertexes, used to know the maximum
+        # number of actions in the ToC SSP.
+        self.maxOutgoingDegree = 0
+
+        # The LOSM object which is optionally loadable from an XML file.
+        self.losm = None
+
+    def load(self, osmXMLFile):
+        """ Load an OSM XML file and construct the ToC Path from that.
+
+            Parameters:
+                osmXMLFile  --  An XML file exported from OpenStreetMap.
+        """
+
+        self.losm = LOSMConverter()
+        self.losm.open(osmXMLFile)
+
+        # The vertexes are the UIDs of the edge pairs because nodes also have a direction of "where
+        # they came from." Thus, this represents leaving e.uid1 and ending up in e.uid2.
+        #self.V = [(e.uid1, e.uid2) for e in self.losm.edges]
+        self.V = [n.uid for n in self.losm.nodes]
+
+        # The edges are the vertexes above, which as LOSM edges, plus all valid successors following
+        # the graph. This means you are at e1.uid2, at an intersection having come from e1.uid1, and
+        # have a valid trajectory to intersection e2.uid2.
+        #self.E = [(e1.uid1, e1.uid2, e2.uid2) for e1, e2 in it.product(self.losm.edges, self.losm.edges) if e1.uid2 == e2.uid1]
+        self.E = [(e.uid1, e.uid2) for e in self.losm.edges]
+
+        #self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v[0] and e[1] == v[1]]) for v in self.V])
+        self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v]) for v in self.V])
+
+        # The autonomy-capable edges are those with a higher speed limit.
+        #self.Eac = [(e1.uid1, e1.uid2, e2.uid2) for e1, e2 in it.product(self.losm.edges, self.losm.edges) \
+        #                if e1.uid2 == e2.uid1 and e2.speedLimit >= 30.0]
+        self.Eac = [(e.uid1, e.uid2) for e in self.losm.edges if e.speedLimit >= 30.0]
+
+        # The autonomy-preferred edges are the same. (Perhaps add a constraint on longer distances.)
+        #self.Eap = [(e1.uid1, e1.uid2, e2.uid2) for e1, e2 in it.product(self.losm.edges, self.losm.edges) \
+        #                if e1.uid2 == e2.uid1 and e2.speedLimit >= 30.0]
+        self.Eac = [(e.uid1, e.uid2) for e in self.losm.edges if e.speedLimit >= 30.0]
+
+        # The weight is equal to the time on the road on e2.
+        #self.w = {(e1.uid1, e1.uid2, e2.uid2): e2.distance / e2.speedLimit for e1, e2 in it.product(self.losm.edges, self.losm.edges) \
+        #                if e1.uid2 == e2.uid1}
+        self.w = {(e.uid1, e.uid2): e.distance / e.speedLimit for e in self.losm.edges}
+
+        # The initial state and goal state are randomly chosen here.
+        self.v0 = 0
+        self.vg = 0
+        while self.v0 == self.vg:
+            self.v0 = rnd.choice(self.V)
+            self.vg = rnd.choice(self.V)
+
+    def random(self, numVertexes=3, probAddEdge=0.25, probAutonomyCapable=0.5, probAutonomyPreferred=0.5):
         """ Create a random ToC Path object, given the number of desired vertexes.
 
             Parameters:
@@ -52,18 +117,6 @@ class ToCPath(object):
         """
 
         self.V = list(range(numVertexes))
-        self.Vac = list()
-        self.Vap = list()
-        while len(self.Vac) == 0 and len(self.Vap) == 0:
-            self.Vac = list()
-            self.Vap = list()
-            for v in self.V:
-                if rnd.random() < probAutonomyCapable:
-                    self.Vac += [v]
-                    if rnd.random() < probAutonomyPreferred:
-                        self.Vap += [v]
-
-        self.w = [rnd.uniform(3.0, 10.0) for v in self.V]
 
         self.E = list()
         for v in self.V:
@@ -77,6 +130,21 @@ class ToCPath(object):
                     e = (v, vp)
                     self.E += [e]
 
+        self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v]) for v in self.V])
+
+        self.Eac = list()
+        self.Eap = list()
+        while len(self.Eac) == 0 and len(self.Eap) == 0:
+            self.Eac = list()
+            self.Eap = list()
+            for e in self.E:
+                if rnd.random() < probAutonomyCapable:
+                    self.Eac += [e]
+                    if rnd.random() < probAutonomyPreferred:
+                        self.Eap += [e]
+
+        self.w = {e: rnd.uniform(3.0, 10.0) for e in self.E}
+
         self.v0 = 0
         self.vg = numVertexes - 1
 
@@ -88,20 +156,21 @@ class ToCPath(object):
         """
 
         result = "Num Vertexes:       %i\n" % (len(self.V))
-        result += "Autonomy Capable:   %s\n" % (str(self.Vac))
-        result += "Autonomy Preferred: %s\n" % (str(self.Vap))
         result += "Num Edges:          %i\n" % (len(self.E))
-        result += "Initial Vertex:     %i\n" % (self.v0)
-        result += "Goal Vertex:        %i\n\n" % (self.vg)
+        result += "Initial Vertex:     %s\n" % (str(self.v0))
+        result += "Goal Vertex:        %s\n\n" % (str(self.vg))
 
         result += "Edges:\n"
         for e in self.E:
             result += "%s\n" % (str(e))
         result += "\n"
 
+        result += "Autonomy Capable:   %s\n" % (str(self.Eac))
+        result += "Autonomy Preferred: %s\n\n" % (str(self.Eap))
+
         result += "Weights:\n"
-        for v in self.V:
-            result += "w[%i] = %.3f\n" % (v, self.w[v])
+        for e in self.E:
+            result += "w[%s] = %.3f\n" % (str(e), self.w[e])
 
         return result
 
@@ -110,7 +179,12 @@ if __name__ == "__main__":
     print("Performing ToCPath Unit Test...")
 
     tocpath = ToCPath()
-    tocpath.create()
+
+    if len(sys.argv) == 2:
+        tocpath.load(sys.argv[1])
+    else:
+        tocpath.random()
+
     print(tocpath)
 
     print("Done.")

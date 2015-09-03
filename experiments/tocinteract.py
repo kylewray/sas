@@ -57,43 +57,49 @@ class ToCInteract(ToC):
         # this pattern after long enough. These will be slightly overridden below.
         for m in self.M:
             for t in self.T:
-                self.Ph[("attentive", m, t, "attentive")] = 0.9
-                self.Ph[("attentive", m, t, "distracted")] = 0.1
-                self.Ph[("distracted", m, t, "attentive")] = 0.1
-                self.Ph[("distracted", m, t, "distracted")] = 0.9
+                self.Ph[("attentive", m, t, "attentive")] = 0.95
+                self.Ph[("attentive", m, t, "distracted")] = 0.05
+                self.Ph[("distracted", m, t, "attentive")] = 0.05
+                self.Ph[("distracted", m, t, "distracted")] = 0.95
 
         # The visual message is less likely to shift the human to attentive. It degrades
         # after 2 time steps to noise as above.
-        for t in range(2):
-            adjustment = 0.4 * (2 - t)
-            self.Ph[("distracted", "visual", t, "attentive")] = 0.1 + adjustment
-            self.Ph[("distracted", "visual", t, "distracted")] = 0.9 - adjustment
+        visualTime = 2
+        #for t in range(visualTime):
+        #    adjustment = 0.25 * (visualTime - t)
+        #    self.Ph[("distracted", "visual", t, "attentive")] = 0.2 #0.05 + adjustment
+        #    self.Ph[("distracted", "visual", t, "distracted")] = 0.8 #0.95 - adjustment
 
         # The visual and auditory message is less likely to shift the human to attentive. It degrades
         # after 4 time steps to noise as above.
-        for t in range(4):
-            adjustment = 0.2 * (4 - t)
-            self.Ph[("distracted", "visual and auditory", t, "attentive")] = 0.1 + adjustment
-            self.Ph[("distracted", "visual and auditory", t, "distracted")] = 0.9 - adjustment
+        visualAndAuditoryTime = 3
+        for t in range(visualAndAuditoryTime):
+            #adjustment = 0.25 * (visualAndAuditoryTime - t)
+            self.Ph[("distracted", "visual and auditory", t, "attentive")] = 0.95 #0.05 + adjustment
+            self.Ph[("distracted", "visual and auditory", t, "distracted")] = 0.05 #0.95 - adjustment
 
 
         # NOP has zero chance to transfer control. Also, set the default values for the others here.
         for h in self.H:
             for m in self.M:
                 for t in self.T:
-                    self.Pc[(h, m, t)] = 0.0
+                    self.Pc[(h, m, t)] = 0.001
 
         # The visual message is likely to transfer control, but only if the human is attentive. If
         # they are distracted, then there is a very low chance. The delay of this reaction is longer, too.
-        for t in range(3):
-            self.Pc[("attentive", "visual", t + 2)] = 0.05 + 0.1 * (3 - t)
-            self.Pc[("distracted", "visual", t + 4)] = 0.0 + 0.025 * (3 - t)
+        for t in range(visualTime):
+            #self.Pc[("attentive", "visual", t + 1)] = 0.25 + 0.1 * (visualTime - t)
+            #self.Pc[("distracted", "visual", t + 2)] = 0.25 + 0.05 * (visualTime - t)
+            self.Pc[("attentive", "visual", t)] = 0.25
+            self.Pc[("distracted", "visual", t)] = 0.05
 
         # The visual and auditory message is more likely to transfer control, in comparison. But
         # still has the same chance if distracted. The delay of this reaction is a bit shorter.
-        for t in range(3):
-            self.Pc[("attentive", "visual and auditory", t + 1)] = 0.05 + 0.2 * (3 - t)
-            self.Pc[("distracted", "visual and auditory", t + 2)] = 0.05 + 0.05 * (3 - t)
+        for t in range(visualAndAuditoryTime):
+            #self.Pc[("attentive", "visual and auditory", t + 1)] = 0.25 + 0.1 * (visualAndAuditoryTime - t)
+            #self.Pc[("distracted", "visual and auditory", t + 2)] = 0.25 + 0.05 * (visualAndAuditoryTime - t)
+            self.Pc[("attentive", "visual and auditory", t)] = 0.50
+            self.Pc[("distracted", "visual and auditory", t)] = 0.10
 
 
         # Observations are a fairly accurate assessment of the true state, but not perfect.
@@ -117,15 +123,15 @@ class ToCInteract(ToC):
         # The visual message is only mildly annoying, but dies off quickly. It's also
         # less annoying if you were distracted, since already being attentive and
         # getting yelled at is of course annoying.
-        for t in range(2):
-            self.C[("attentive", "visual", t)] = max(1.0, 4.0 - 2.0 * t)
-            self.C[("distracted", "visual", t)] = max(1.0, 4.0 - t)
+        for t in range(visualTime):
+            self.C[("attentive", "visual", t)] = 1.0 #max(1.0, 4.0 - 2.0 * t)
+            self.C[("distracted", "visual", t)] = 1.0 #max(1.0, 4.0 - t)
 
         # Lastly, they are very high for the annoying extra auditory beeps. And you pay for
         # this cost for a much longer duration. Furthermore, it is also annoying when
         # you are distracted, since the sound is alarm-like, and breaks the user out of
         # sleep, good books, or research.
-        for t in range(5):
-            self.C[("attentive", "visual and auditory", t)] = max(1.0, 5.0 - t)
-            self.C[("distracted", "visual and auditory", t)] = max(1.0, 2.0 - t)
+        for t in range(visualAndAuditoryTime):
+            self.C[("attentive", "visual and auditory", t)] = 100.0 #max(1.0, 5.0 - t)
+            self.C[("distracted", "visual and auditory", t)] = 0.0 #max(1.0, 2.0 - t)
 
