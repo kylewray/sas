@@ -68,36 +68,31 @@ class ToCPath(object):
         self.losm = LOSMConverter()
         self.losm.open(osmXMLFile)
 
-        # The vertexes are the UIDs of the edge pairs because nodes also have a direction of "where
-        # they came from." Thus, this represents leaving e.uid1 and ending up in e.uid2.
-        #self.V = [(e.uid1, e.uid2) for e in self.losm.edges]
-        self.V = [n.uid for n in self.losm.nodes]
+        #nodes = self.losm.nodes
+        #edges = self.losm.edges
+        nodes, edges = self.losm.simplified_graph()
 
-        # The edges are the vertexes above, which as LOSM edges, plus all valid successors following
-        # the graph. This means you are at e1.uid2, at an intersection having come from e1.uid1, and
-        # have a valid trajectory to intersection e2.uid2.
-        #self.E = [(e1.uid1, e1.uid2, e2.uid2) for e1, e2 in it.product(self.losm.edges, self.losm.edges) if e1.uid2 == e2.uid1]
-        self.E = [(e.uid1, e.uid2) for e in self.losm.edges]
+        # The vertexes are the UIDs within the graph.
+        self.V = [n.uid for n in nodes]
 
-        #self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v[0] and e[1] == v[1]]) for v in self.V])
-        self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v]) for v in self.V])
+        # The edges are the vertexes above plus all valid successors following the graph.
+        self.E = [(e.uid1, e.uid2) for e in edges] + [(e.uid2, e.uid1) for e in edges]
+
+        self.maxOutgoingDegree = max([n.degree for n in nodes])
 
         # The autonomy-capable edges are those with a higher speed limit.
-        #self.Eac = [(e1.uid1, e1.uid2, e2.uid2) for e1, e2 in it.product(self.losm.edges, self.losm.edges) \
-        #                if e1.uid2 == e2.uid1 and e2.speedLimit >= 30.0]
-        self.Eac = [(e.uid1, e.uid2) for e in self.losm.edges if e.speedLimit >= 30.0]
+        self.Eac = [(e.uid1, e.uid2) for e in edges if e.speedLimit >= 30.0] + \
+                    [(e.uid2, e.uid1) for e in edges if e.speedLimit >= 30.0]
 
         # The autonomy-preferred edges are the same. (Perhaps add a constraint on longer distances.)
-        #self.Eap = [(e1.uid1, e1.uid2, e2.uid2) for e1, e2 in it.product(self.losm.edges, self.losm.edges) \
-        #                if e1.uid2 == e2.uid1 and e2.speedLimit >= 30.0]
-        self.Eac = [(e.uid1, e.uid2) for e in self.losm.edges if e.speedLimit >= 30.0]
+        self.Eap = [(e.uid1, e.uid2) for e in edges if e.speedLimit >= 30.0] + \
+                    [(e.uid2, e.uid1) for e in edges if e.speedLimit >= 30.0]
 
-        # The weight is equal to the time on the road on e2.
-        #self.w = {(e1.uid1, e1.uid2, e2.uid2): e2.distance / e2.speedLimit for e1, e2 in it.product(self.losm.edges, self.losm.edges) \
-        #                if e1.uid2 == e2.uid1}
-        self.w = {(e.uid1, e.uid2): e.distance / e.speedLimit for e in self.losm.edges}
+        # The weight is equal to the time on the road edge.
+        self.w = {(e.uid1, e.uid2): e.distance / e.speedLimit for e in edges}
+        self.w.update({(e.uid2, e.uid1): e.distance / e.speedLimit for e in edges})
 
-        # The initial state and goal state are randomly chosen here.
+        # The initial state and goal state are randomly chosen here. They must be different.
         self.v0 = 0
         self.vg = 0
         while self.v0 == self.vg:
@@ -130,7 +125,7 @@ class ToCPath(object):
                     e = (v, vp)
                     self.E += [e]
 
-        self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v]) for v in self.V])
+        self.maxOutgoingDegree = max([n.degree for n in self.losm.nodes]) #max([len([e for e in self.E if e[0] == v]) for v in self.V])
 
         self.Eac = list()
         self.Eap = list()
@@ -155,18 +150,18 @@ class ToCPath(object):
                 A pretty string of the object.
         """
 
-        result = "Num Vertexes:       %i\n" % (len(self.V))
-        result += "Num Edges:          %i\n" % (len(self.E))
-        result += "Initial Vertex:     %s\n" % (str(self.v0))
-        result += "Goal Vertex:        %s\n\n" % (str(self.vg))
+        result = "Num Vertexes:           %i\n" % (len(self.V))
+        result += "Initial Vertex:         %s\n" % (str(self.v0))
+        result += "Goal Vertex:            %s\n\n" % (str(self.vg))
+
+        result += "Num Edges:              %i\n" % (len(self.E))
+        result += "Num Autonomy-Capable:   %i\n" % (len(self.Eac))
+        result += "Num Autonomy-Preferred: %i\n\n" % (len(self.Eap))
 
         result += "Edges:\n"
         for e in self.E:
             result += "%s\n" % (str(e))
         result += "\n"
-
-        result += "Autonomy Capable:   %s\n" % (str(self.Eac))
-        result += "Autonomy Preferred: %s\n\n" % (str(self.Eap))
 
         result += "Weights:\n"
         for e in self.E:

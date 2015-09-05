@@ -49,19 +49,34 @@ def save_policy_for_visualizer(tocssp, tocpath, V, pi, filename):
 
     with open(filename, 'w') as f:
         for s, state in enumerate(tocssp.states):
+            v = None
+            x = None
             if state not in calE:
+                v = state[0]
+                x = state[1]
+
+            action = tocssp.actions[pi[s]]
+            ad = action[0]
+            ac = action[1]
+
+            e = None
+            if state not in calE:
+                e = (v, tocssp.theta[(v, ad)])
+
+            if state not in calE and not (e not in tocpath.Eac and x == "vehicle"):
                 currentVertexUID = state[0]
                 currentAutonomy = int(state[1] == "vehicle")
 
                 actionDirection, actionControl = tocssp.actions[pi[s]]
                 nextVertexUID = tocssp.theta[(currentVertexUID, actionDirection)]
 
-                # This means a self-loop... since it wasn't in A(s).
+                # This means the action was undefined at this state, i.e., it wasn't in A(s).
                 if nextVertexUID is None:
-                    nextVertexUID = currentVertexUID
+                    raise Exception()
+                    #nextVertexUID = currentVertexUID
 
                 nextAutonomy = 0
-                if state[1] == "vehicle" and actionControl == "keep" or state[1] == "human" and actionControl == "switch":
+                if (state[1] == "vehicle" and actionControl == "keep") or (state[1] == "human" and actionControl == "switch"):
                     nextAutonomy = 1
 
                 previousVertexUIDs = [e[0] for e in tocpath.E if e[1] == currentVertexUID]
@@ -74,15 +89,12 @@ def save_policy_for_visualizer(tocssp, tocpath, V, pi, filename):
                                           #str(V[s])
                                          ]) + "\n")
 
-            # If this is an absorbing state, then 
-            #if pi[s] >= len(tocssp.states) - 3:
-
 
 if __name__ == "__main__":
     print("Performing Basic ToCSSP Experiment...")
 
-    if len(sys.argv) != 3:
-        print("Must specify an input OSM file path and output policy file name.")
+    if len(sys.argv) != 5:
+        print("Must specify an input OSM file path, start UID, goal UID, and output policy file name, in that order.")
         sys.exit(0)
 
     tocHtoV = ToC(randomize=(2, 2, 2, 10))
@@ -98,12 +110,14 @@ if __name__ == "__main__":
 
     tocpath = ToCPath()
     tocpath.load(sys.argv[1])
+    tocpath.v0 = int(sys.argv[2])
+    tocpath.vg = int(sys.argv[3])
 
     print("Done.\nCreating the ToC SSP... ", end='')
     sys.stdout.flush()
 
     tocssp = ToCSSP()
-    tocssp.create(toc, tocpomdp, tocpath)
+    tocssp.create(toc, tocpomdp, tocpath, controller='human')
 
     print("Done.\nSolving the ToC SSP... ", end='')
     sys.stdout.flush()
@@ -113,7 +127,7 @@ if __name__ == "__main__":
     print("Done.\nSaving the Policy... ", end='')
     sys.stdout.flush()
 
-    save_policy_for_visualizer(tocssp, tocpath, V, pi, sys.argv[2])
+    save_policy_for_visualizer(tocssp, tocpath, V, pi, sys.argv[4])
 
     print("Done.\nResults:")
 
