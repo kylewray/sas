@@ -239,6 +239,9 @@ class ToCSSP(MDP):
         wmin = min(path.w.values())
         wmax = max(path.w.values())
 
+        adjustment = 0.0
+        epsilonPenalty = 1.0 #wmax
+
         self.epsilon = 0.001
         self.gamma = 0.999 # 1.0 # TODO: Change once you implement LAO*.
         #self.horizon = max(10000, len(path.V) + 1) # This must be very large horizon, since wmin and wmax are very far apart.
@@ -264,17 +267,16 @@ class ToCSSP(MDP):
 
                 # Normal cost of being on a road.
                 if state not in calE and self.theta[(v, ad)] is not None and not (e in path.Eap and x == "human"):
-                    R[s][a] = -path.w[e]
+                    R[s][a] = -path.w[e] - adjustment
 
                 # Extra penalty included on a normal road which is autonomy-preferred but
                 # the human is driving.
                 if state not in calE and self.theta[(v, ad)] is not None and e in path.Eap and x == "human":
-                    epsilonPenalty = 0.1
-                    R[s][a] = -path.w[e] - epsilonPenalty #wmax
+                    R[s][a] = -path.w[e] - adjustment - epsilonPenalty #wmax
 
                 # Handle the "not in A(s)" case, which sets the penalty to an impossibly large number.
                 if state not in calE and self.theta[(v, ad)] is None:
-                    R[s][a] = -wmax # * self.horizon
+                    R[s][a] = -wmax - adjustment # * self.horizon
 
                 ## Constant for the absorbing 'success' state.
                 if state == "success":
@@ -282,11 +284,11 @@ class ToCSSP(MDP):
 
                 ## Constant for the absorbing 'failure' state.
                 if state == "failure":
-                    R[s][a] = -wmax # * self.horizon
+                    R[s][a] = -wmax - adjustment # * self.horizon
 
                 ## Constant for the absorbing 'aborted' state. This is no longer a reachable state.
                 if state == "aborted":
-                    R[s][a] = -wmax # * self.horizon
+                    R[s][a] = -wmax - adjustment # * self.horizon
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()

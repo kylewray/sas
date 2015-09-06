@@ -117,7 +117,9 @@ if __name__ == "__main__":
     sys.stdout.flush()
 
     tocssp = ToCSSP()
-    tocssp.create(toc, tocpomdp, tocpath, controller='human')
+    #tocssp.create(toc, tocpomdp, tocpath, controller='human')
+    #tocssp.create(toc, tocpomdp, tocpath, controller='vehicle')
+    tocssp.create(toc, tocpomdp, tocpath, controller=None)
 
     print("Done.\nSolving the ToC SSP... ", end='')
     sys.stdout.flush()

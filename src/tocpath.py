@@ -89,8 +89,8 @@ class ToCPath(object):
                     [(e.uid2, e.uid1) for e in edges if e.speedLimit >= 30.0]
 
         # The weight is equal to the time on the road edge.
-        self.w = {(e.uid1, e.uid2): e.distance / e.speedLimit for e in edges}
-        self.w.update({(e.uid2, e.uid1): e.distance / e.speedLimit for e in edges})
+        self.w = {(e.uid1, e.uid2): e.distance / e.speedLimit * 3600.0 for e in edges}
+        self.w.update({(e.uid2, e.uid1): e.distance / e.speedLimit * 3600.0 for e in edges})
 
         # The initial state and goal state are randomly chosen here. They must be different.
         self.v0 = 0

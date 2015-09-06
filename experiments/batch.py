@@ -35,13 +35,14 @@ from tocssp import *
 from tocinteract import *
 
 
-def simulate(tocssp, tocpath, pi):
+def simulate(tocssp, tocpath, pi, printTrajectory=False):
     """ Simulate the ToC SSP from its initial state and return the relevant metrics.
 
         Parameters:
-            tocssp      --  The ToC SSP.
-            tocpath     --  The ToC Path.
-            pi          --  The mapping from states to actions.
+            tocssp          --  The ToC SSP.
+            tocpath         --  The ToC Path.
+            pi              --  The mapping from states to actions.
+            printTrajectory --  Optionally print the trajectory. Default is False.
 
         Returns:
             isGoalReachable         --  If the goal was reached. Either 'Y' or 'N'.
@@ -49,6 +50,8 @@ def simulate(tocssp, tocpath, pi):
                                         it traveled on which could have been.
             travelTime              --  The actual travel time on the roads, which are the undiscounted weights.
     """
+
+    maxIterations = 10000
 
     calEIndexes = [tocssp.states.index("success"), tocssp.states.index("failure"), tocssp.states.index("aborted")]
 
@@ -58,10 +61,11 @@ def simulate(tocssp, tocpath, pi):
     travelTime = 0.0
     s = tocssp.s0
 
-    while s not in calEIndexes and len(autonomousCounter) < 20:
+    while s not in calEIndexes and len(autonomousCounter) < maxIterations:
         v, x = tocssp.states[s]
 
-        print("State: %i (%s, %s)" % (s, v, x))
+        if printTrajectory:
+            print("State: %i (%s, %s)" % (s, v, x))
 
         # Randomly transition to a new state following the state transition function.
         targetValue = rnd.random()
@@ -78,7 +82,8 @@ def simulate(tocssp, tocpath, pi):
                 sp = spPotential
                 break
 
-        print("Action: %i %s" % (pi[s], tocssp.actions[pi[s]]))
+        if printTrajectory:
+            print("Action: %i %s" % (pi[s], tocssp.actions[pi[s]]))
 
         # The last transision from s to sp at an absorbing state has no extra properties
         # in terms of time or autonomy. Skip it.
@@ -89,12 +94,23 @@ def simulate(tocssp, tocpath, pi):
             vp, xp = tocssp.states[sp]
             e = (v, vp)
 
-            print("State Prime: %i (%s, %s)" % (sp, vp, xp))
+            if printTrajectory:
+                print("State Prime: %i (%s, %s)" % (sp, vp, xp))
 
             autonomousCounter += [x == "vehicle" and e in tocpath.Eap]
-            travelTime += tocpath.w[e]
+
+            # Add to the travel time. Also, handle the special case in which ToC Failed.
+            # This, as per the definition, assumes that the maximal amount of time is
+            # spent waiting to try ToC again. Sometimes there are self-loops in roads,
+            # so the edge will exist in w. When the edge does not exist, that is when
+            # we have s == sp at a normal road.
+            try:
+                travelTime += tocpath.w[e]
+            except KeyError:
+                travelTime += max([time for edge, time in tocpath.w.items()])
         else:
-            print("State Prime: %i (%s)" % (sp, tocssp.states[sp]))
+            if printTrajectory:
+                print("State Prime: %i (%s)" % (sp, tocssp.states[sp]))
 
         s = sp
 
@@ -109,11 +125,21 @@ def simulate(tocssp, tocpath, pi):
     return isGoalReachable, percentageAutonomous, travelTime
 
 
-cities = {("Boston", "maps/boston/boston.osm", 61341179, 61340485),
-         }
+cities = [("Austin", "maps/austin/austin.osm", 152702349, 282401347),
+          ("Baltimore", "maps/baltimore/baltimore.osm", 49466255, 37358743),
+          ("Boston", "maps/boston/boston.osm", 61353309, 896277838),
+          ("Chicago", "maps/chicago/chicago.osm", 353785883, 315396746),
+          ("Denver", "maps/denver/denver.osm", 3257743261, 176071158),
+          ("Los Angeles", "maps/los_angeles/los_angeles.osm", 123739873, 1499113026),
+          ("New York City", "maps/new_york_city/new_york_city.osm", 42960179, 448041300),
+          ("Pittsburgh", "maps/pittsburgh/pittsburgh.osm", 104866192, 105701915),
+          ("San Francisco", "maps/san_francisco/san_francisco.osm", 259392513, 65307150),
+          ("Seattle", "maps/seattle/seattle.osm", 53178034, 53212778),
+         ]
 
-resultsFilename = "results/results.csv"
-numTrials = 1
+
+resultsFilename = "results/results" + str(int(round(time.time() * 1000))) + ".csv"
+numTrials = 50
 
 
 def batch():
@@ -174,20 +200,18 @@ def batch():
         for i in range(numTrials):
             isGoalReachable['h+v'], percentageAutonomous['h+v'], travelTimeTrial[i] = simulate(tocssp, tocpath, pi)
         travelTime['h+v'] = np.mean(travelTimeTrial)
-        travelTimeStd = np.std(travelTimeTrial)
+        travelTimeStd = np.std(travelTimeTrial) # Special, we have a stdev for this.
 
         print(".", end='')
         sys.stdout.flush()
 
-        with open(resultsFilename, 'w') as f:
-            f.write("%s,%i,%i,%s,%.4f,%.4f,%s,%.4f,%.4f,%s,%.4f,%.4f\n" % (city, tocssp.n, tocssp.m,
+        with open(resultsFilename, 'a') as f:
+            f.write("%s,%i,%i,%s,%.4f,%.4f,%s,%.4f,%.4f,%s,%.4f,%.4f,%.4f\n" % (city, tocssp.n, tocssp.m,
                     isGoalReachable['h'], percentageAutonomous['h'], travelTime['h'],
                     isGoalReachable['v'], percentageAutonomous['v'], travelTime['v'],
-                    isGoalReachable['h+v'], percentageAutonomous['h+v'], travelTime['h+v']))
+                    isGoalReachable['h+v'], percentageAutonomous['h+v'], travelTime['h+v'], travelTimeStd))
 
         print(" Done.")
-
-    print("Done.")
 
 
 if __name__ == "__main__":
