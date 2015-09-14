@@ -28,6 +28,9 @@ import sys
 
 thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
+sys.path.append(thisFilePath)
+from additional_functions import *
+
 sys.path.append(os.path.join(thisFilePath, "..", "..", "nova", "python"))
 from nova.mdp import *
 from nova.pomdp import *
@@ -50,21 +53,55 @@ class ToCSSP(MDP):
 
         self.theta = None
 
-    def _compute_rho(self, tocpomdp, sWeight):
+        self.toc = None
+        self.tocpomdp = None
+        self.rho = None
+
+    def _compute_rho(self, numIterations=25, timeDilation=3):
         """ Compute the probabilities of reaching terminal `end result' states.
 
             Parameters:
-                tocpomdp    --  The ToC POMDP model in question.
-                sWeight     --  The weight (floored) of the state being considered.
-
-            Returns:
-                The NumPy array of size 3, corresponding to Pr(success),
-                Pr(failure), and Pr(aborted).
+                numIterations   --  Optionally specify the number of iterations used to sample rho. Default is 25.
+                timeDilation    --  Optionally specify how much time is dilated for the ToCPOMDP. Default is 3.
         """
 
-        #return np.array([1.0, 0.0, 0.0])
-        #return np.array([3.0, 2.0, 1.0]) / 6.0
-        return np.array([0.9, 0.0, 0.1])
+        self.rho = [None for i in range(len(self.toc))]
+
+        # For each transfer of control problem, we will solve the POMDP and sample
+        # for various remaining times to get probabilities.
+        for i in range(len(self.toc)):
+            toc = self.toc[i]
+            tocpomdp = self.tocpomdp[i]
+
+            Gamma, pi, timing = tocpomdp.solve()
+
+            self.rho[i] = [None for timeRemaining in toc.T]
+
+            for timeRemaining in toc.T:
+                self.rho[i][timeRemaining] = np.array([0.0, 0.0, 0.0])
+
+                for k in range(numIterations):
+                    validInitialStates = [tocpomdp.states.index((timeRemaining, h, "nop", 0)) for h in toc.H]
+                    b = np.array([1.0 / len(validInitialStates) * (i in validInitialStates) for i in range(tocpomdp.n)])
+                    s = rnd.choice(validInitialStates)
+
+                    for t in range(timeRemaining + 1):
+                        a, v = take_action(tocpomdp, Gamma, pi, b)
+                        sp = transition_state(tocpomdp, s, a)
+                        o = make_observation(tocpomdp, a, sp)
+                        b = update_belief(tocpomdp, b, a, o)
+                        s = sp
+
+                    if s == tocpomdp.states.index("success"):
+                        self.rho[i][timeRemaining][0] += 1.0
+                    elif s == tocpomdp.states.index("failure"):
+                        self.rho[i][timeRemaining][1] += 1.0
+                    elif s == tocpomdp.states.index("aborted"):
+                        self.rho[i][timeRemaining][2] += 1.0
+
+                self.rho[i][timeRemaining] /= float(numIterations)
+
+        print(self.rho)
 
     def create(self, toc, tocpomdp, path, controller=None):
         """ Create the MDP SSP given the ToC's path planning problem and the ToC problem itself.
@@ -76,6 +113,11 @@ class ToCSSP(MDP):
                 controller  --  Optionally restrict the ToC SSP to only "human" or "vehicle" control.
                                 Default is None, meaning both are included.
         """
+
+        self.toc = toc
+        self.tocpomdp = tocpomdp
+
+        self._compute_rho()
 
         calE = ["success", "failure", "aborted"]
         X = ["human", "vehicle"]
@@ -145,6 +187,9 @@ class ToCSSP(MDP):
                         vp = statePrime[0]
                         xp = statePrime[1]
 
+                    timeDilation = 3
+                    timeToTransferControl = min(len(toc[0].T) - 1, int(path.w[e]) * timeDilation)
+
                     # Successful transfer of control over current state.
                     if state not in calE and statePrime not in calE and \
                             aleph and \
@@ -152,7 +197,10 @@ class ToCSSP(MDP):
                             ac == "switch" and \
                             x != xp:
                         S[s][a][cur] = sp
-                        T[s][a][cur] = rho[0]
+                        if x == "human":
+                            T[s][a][cur] = self.rho[0][timeToTransferControl][0]
+                        else:
+                            T[s][a][cur] = self.rho[1][timeToTransferControl][0]
                         cur += 1
 
                     # Failed to transfer control over current state, but next state is autonomy-capable.
@@ -162,7 +210,10 @@ class ToCSSP(MDP):
                             ac == "switch" and \
                             x == xp:
                         S[s][a][cur] = sp
-                        T[s][a][cur] = rho[1]
+                        if x == "human":
+                            T[s][a][cur] = self.rho[0][timeToTransferControl][1]
+                        else:
+                            T[s][a][cur] = self.rho[1][][1]
                         cur += 1
 
                     # Aborted transfer of control over current state. This now means a self-loop, since
@@ -177,7 +228,10 @@ class ToCSSP(MDP):
                             ac == "switch" and \
                             state == statePrime:
                         S[s][a][cur] = sp
-                        T[s][a][cur] = rho[2]
+                        if x == "human":
+                            T[s][a][cur] = self.rho[0][path.w[e]][2]
+                        else:
+                            T[s][a][cur] = self.rho[1][path.w[e]][2]
                         cur += 1
 
                     # Kept current controller. No transfer of control.
@@ -189,16 +243,6 @@ class ToCSSP(MDP):
                         S[s][a][cur] = sp
                         T[s][a][cur] = 1.0
                         cur += 1
-
-                    # Anytime at a non-problem and non-goal state, that the
-                    # action doesn't work.. Basically when it is not available
-                    # following A(s).
-                    #if state not in calE and statePrime == "failure" and \
-                    #        aleph and \
-                    #        self.theta[(v, ad)] == None:
-                    #    S[s][a][cur] = sp
-                    #    T[s][a][cur] = 1.0
-                    #    cur += 1
 
                     # Reached goal. Successfully reached success state!
                     if state not in calE and statePrime == "success" and \
@@ -239,8 +283,10 @@ class ToCSSP(MDP):
         wmin = min(path.w.values())
         wmax = max(path.w.values())
 
-        adjustment = 0.0
-        epsilonPenalty = 1.0 #wmax
+        # At every intersection, there's always a slight delay on average due to merging traffic. This is considered part of
+        # the weight, but I put it here instead.
+        adjustment = wmin
+        epsilonPenalty = wmin
 
         self.epsilon = 0.001
         self.gamma = 0.999 # 1.0 # TODO: Change once you implement LAO*.
@@ -312,11 +358,14 @@ if __name__ == "__main__":
     print("Performing ToCSSP Unit Test...")
 
     tocHtoV = ToC(randomize=(2, 2, 2, 5))
-    tocVtoH = ToC(randomize=(2, 2, 2, 5))
-    toc = (tocHtoV, tocVtoH)
+    tocpomdpHtoV = ToCPOMDP()
+    tocpomdpHtoV.create(tocHtoV)
 
-    tocpomdpHtoV = None
-    tocpomdpVtoH = None
+    tocVtoH = ToC(randomize=(2, 2, 2, 5))
+    tocpomdpVtoH = ToCPOMDP()
+    tocpomdpVtoH.create(tocVtoH)
+
+    toc = (tocHtoV, tocVtoH)
     tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
 
     print("Creating the ToC Path... ", end='')

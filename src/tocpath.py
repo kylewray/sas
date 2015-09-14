@@ -125,7 +125,7 @@ class ToCPath(object):
                     e = (v, vp)
                     self.E += [e]
 
-        self.maxOutgoingDegree = max([n.degree for n in self.losm.nodes]) #max([len([e for e in self.E if e[0] == v]) for v in self.V])
+        self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v]) for v in self.V])
 
         self.Eac = list()
         self.Eap = list()

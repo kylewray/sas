@@ -27,13 +27,12 @@ import os
 import sys
 
 thisFilePath = os.path.dirname(os.path.realpath(__file__))
-
 sys.path.append(thisFilePath)
-from additional_functions import *
 
 sys.path.append(os.path.join(thisFilePath, "..", "src"))
 from toc import *
 from tocpomdp import *
+from additional_functions import *
 
 
 def initialize():

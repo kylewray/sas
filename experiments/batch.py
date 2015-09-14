@@ -134,12 +134,12 @@ cities = [("Austin", "maps/austin/austin.osm", 152702349, 282401347),
           ("New York City", "maps/new_york_city/new_york_city.osm", 42960179, 448041300),
           ("Pittsburgh", "maps/pittsburgh/pittsburgh.osm", 104866192, 105701915),
           ("San Francisco", "maps/san_francisco/san_francisco.osm", 259392513, 65307150),
-          ("Seattle", "maps/seattle/seattle.osm", 53178034, 53212778),
+          ("Seattle", "maps/seattle/seattle.osm", 1506967740, 1730115922),
          ]
 
 
-resultsFilename = "results/results" + str(int(round(time.time() * 1000))) + ".csv"
-numTrials = 50
+resultsFilename = "results/results_" + str(int(round(time.time() * 1000))) + ".csv"
+numTrials = 100
 
 
 def batch():
@@ -147,12 +147,15 @@ def batch():
 
     # As our model allows, we create one POMDP for each 'scenario' which works for any ToC SSP (city or map).
     # Here, we allow for two scenarios: human to vehicle and vehicle to human.
-    tocHtoV = ToCInteract(nt=5) #randomize=(2, 2, 2, 5))
-    tocVtoH = ToCInteract(nt=5) #randomize=(2, 2, 2, 5))
-    toc = (tocHtoV, tocVtoH)
+    tocHtoV = ToCInteract(nt=8)
+    tocpomdpHtoV = ToCPOMDP()
+    tocpomdpHtoV.create(tocHtoV)
 
-    tocpomdpHtoV = None
-    tocpomdpVtoH = None
+    tocVtoH = ToCInteract(nt=8)
+    tocpomdpVtoH = ToCPOMDP()
+    tocpomdpVtoH.create(tocVtoH)
+
+    toc = (tocHtoV, tocVtoH)
     tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
 
     for city, filename, startVertex, goalVertex in cities:
@@ -196,20 +199,23 @@ def batch():
         tocssp.create(toc, tocpomdp, tocpath, controller=None)
         V, pi = tocssp.solve()
 
-        travelTimeTrial = np.array([0.0 for i in range(numTrials)])
+        isGoalReachableTrials = np.array([0.0 for i in range(numTrials)])
+        percentageAutonomousTrials = np.array([0.0 for i in range(numTrials)])
+        travelTimeTrials = np.array([0.0 for i in range(numTrials)])
         for i in range(numTrials):
-            isGoalReachable['h+v'], percentageAutonomous['h+v'], travelTimeTrial[i] = simulate(tocssp, tocpath, pi)
-        travelTime['h+v'] = np.mean(travelTimeTrial)
-        travelTimeStd = np.std(travelTimeTrial) # Special, we have a stdev for this.
+            isGoalReachableTrials[i], percentageAutonomousTrials[i], travelTimeTrials[i] = simulate(tocssp, tocpath, pi)
+        isGoalReachable['h+v'] = bool(np.mean(isGoalReachableTrials))
+        percentageAutonomous['h+v'] = np.mean(percentageAutonomousTrials)
+        travelTime['h+v'] = np.mean(travelTimeTrials)
 
         print(".", end='')
         sys.stdout.flush()
 
         with open(resultsFilename, 'a') as f:
-            f.write("%s,%i,%i,%s,%.4f,%.4f,%s,%.4f,%.4f,%s,%.4f,%.4f,%.4f\n" % (city, tocssp.n, tocssp.m,
+            f.write("%s,%i,%i,%s,%.4f,%.4f,%s,%.4f,%.4f,%s,%.4f,%.4f\n" % (city, tocssp.n, tocssp.m,
                     isGoalReachable['h'], percentageAutonomous['h'], travelTime['h'],
                     isGoalReachable['v'], percentageAutonomous['v'], travelTime['v'],
-                    isGoalReachable['h+v'], percentageAutonomous['h+v'], travelTime['h+v'], travelTimeStd))
+                    isGoalReachable['h+v'], percentageAutonomous['h+v'], travelTime['h+v']))
 
         print(" Done.")
 

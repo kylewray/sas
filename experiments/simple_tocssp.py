@@ -28,6 +28,7 @@ import sys
 
 thisFilePath = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(thisFilePath)
+from tocinteract import *
 
 sys.path.append(os.path.join(thisFilePath, "..", "src"))
 from tocpath import *
@@ -97,12 +98,15 @@ if __name__ == "__main__":
         print("Must specify an input OSM file path, start UID, goal UID, and output policy file name, in that order.")
         sys.exit(0)
 
-    tocHtoV = ToC(randomize=(2, 2, 2, 10))
-    tocVtoH = ToC(randomize=(2, 2, 2, 10))
-    toc = (tocHtoV, tocVtoH)
+    tocHtoV = ToCInteract(nt=8)
+    tocpomdpHtoV = ToCPOMDP()
+    tocpomdpHtoV.create(tocHtoV)
 
-    tocpomdpHtoV = None
-    tocpomdpVtoH = None
+    tocVtoH = ToCInteract(nt=8)
+    tocpomdpVtoH = ToCPOMDP()
+    tocpomdpVtoH.create(tocVtoH)
+
+    toc = (tocHtoV, tocVtoH)
     tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
 
     print("Creating the ToC Path... ", end='')

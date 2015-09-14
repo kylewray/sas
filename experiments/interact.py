@@ -38,7 +38,6 @@ import sys
 thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 sys.path.append(thisFilePath)
-from additional_functions import *
 from tocinteract import *
 
 sys.path.append(os.path.join(thisFilePath, "..", "..", "losm", "python"))
@@ -48,6 +47,7 @@ sys.path.append(os.path.join(thisFilePath, "..", "src"))
 from toc import *
 from tocpomdp import *
 from tocpath import *
+from additional_functions import *
 
 
 class Interact(object):
