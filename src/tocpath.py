@@ -41,13 +41,13 @@ class ToCPath(object):
 
         self.V = list()
         self.E = list()
-        self.Eac = list()
-        self.Eap = list()
+        self.Ec = list()
+        self.Ep = list()
         self.w = dict()
         self.v0 = None
         self.vg = None
 
-        # For visualization purposes, we include a parallel array for each
+        # For visualization purposes, we include a parallel array for Ech
         # (x, y) location of the vertexes in V.
         self.loc = list()
 
@@ -81,11 +81,11 @@ class ToCPath(object):
         self.maxOutgoingDegree = max([n.degree for n in nodes])
 
         # The autonomy-capable edges are those with a higher speed limit.
-        self.Eac = [(e.uid1, e.uid2) for e in edges if e.speedLimit >= 30.0] + \
+        self.Ec = [(e.uid1, e.uid2) for e in edges if e.speedLimit >= 30.0] + \
                     [(e.uid2, e.uid1) for e in edges if e.speedLimit >= 30.0]
 
         # The autonomy-preferred edges are the same. (Perhaps add a constraint on longer distances.)
-        self.Eap = [(e.uid1, e.uid2) for e in edges if e.speedLimit >= 30.0] + \
+        self.Ep = [(e.uid1, e.uid2) for e in edges if e.speedLimit >= 30.0] + \
                     [(e.uid2, e.uid1) for e in edges if e.speedLimit >= 30.0]
 
         # The weight is equal to the time on the road edge.
@@ -127,16 +127,16 @@ class ToCPath(object):
 
         self.maxOutgoingDegree = max([len([e for e in self.E if e[0] == v]) for v in self.V])
 
-        self.Eac = list()
-        self.Eap = list()
-        while len(self.Eac) == 0 and len(self.Eap) == 0:
-            self.Eac = list()
-            self.Eap = list()
+        self.Ec = list()
+        self.Ep = list()
+        while len(self.Ec) == 0 and len(self.Ep) == 0:
+            self.Ec = list()
+            self.Ep = list()
             for e in self.E:
                 if rnd.random() < probAutonomyCapable:
-                    self.Eac += [e]
+                    self.Ec += [e]
                     if rnd.random() < probAutonomyPreferred:
-                        self.Eap += [e]
+                        self.Ep += [e]
 
         self.w = {e: rnd.uniform(3.0, 10.0) for e in self.E}
 
@@ -155,8 +155,8 @@ class ToCPath(object):
         result += "Goal Vertex:            %s\n\n" % (str(self.vg))
 
         result += "Num Edges:              %i\n" % (len(self.E))
-        result += "Num Autonomy-Capable:   %i\n" % (len(self.Eac))
-        result += "Num Autonomy-Preferred: %i\n\n" % (len(self.Eap))
+        result += "Num Autonomy-Capable:   %i\n" % (len(self.Ec))
+        result += "Num Autonomy-Preferred: %i\n\n" % (len(self.Ep))
 
         result += "Edges:\n"
         for e in self.E:

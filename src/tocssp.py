@@ -51,57 +51,96 @@ class ToCSSP(MDP):
         self.states = list()
         self.actions = list()
 
-        self.theta = None
-
         self.toc = None
         self.tocpomdp = None
-        self.rho = None
+        self.tocpomdpGamma = None
+        self.tocpomdppi = None
 
-    def _compute_rho(self, numIterations=25, timeDilation=3):
-        """ Compute the probabilities of reaching terminal `end result' states.
+    def _compute_rho(self, bfa, bfhata, timeRemaining, numIterations=25):
+        """ Compute the probabilities of reaching terminal `end result' states, following Equations 14 and 15.
 
             Parameters:
+                bfa             --  The current actor. Note we assume in this code that the TOC model is the same for all v.
+                bfhata          --  The desired actor.
+                timeRemaining   --  How much time is allotted to TOC.
                 numIterations   --  Optionally specify the number of iterations used to sample rho. Default is 25.
-                timeDilation    --  Optionally specify how much time is dilated for the ToCPOMDP. Default is 3.
+
+            Return:
+                A 3-array corresponding to: [Pr(human), Pr(vehicle), Pr(side of road)].
         """
 
-        self.rho = [None for i in range(len(self.toc))]
+        calA = ["human", "vehicle", "side of road"]
 
-        # For each transfer of control problem, we will solve the POMDP and sample
-        # for various remaining times to get probabilities.
-        for i in range(len(self.toc)):
-            toc = self.toc[i]
-            tocpomdp = self.tocpomdp[i]
+        bfaIndex = calA.index(bfa)
+        bfhataIndex = calA.index(bfhata)
 
-            Gamma, pi, timing = tocpomdp.solve()
+        toc = self.toc[bfaIndex]
+        tocpomdp = self.tocpomdp[bfaIndex]
+        Gamma = self.tocpomdpGamma[bfaIndex]
+        pi = self.tocpomdppi[bfaIndex]
 
-            self.rho[i] = [None for timeRemaining in toc.T]
+        rho = np.array([0.0, 0.0, 0.0])
 
-            for timeRemaining in toc.T:
-                self.rho[i][timeRemaining] = np.array([0.0, 0.0, 0.0])
+        # Before anything, handle the two cases with 1.0.
 
-                for k in range(numIterations):
-                    validInitialStates = [tocpomdp.states.index((timeRemaining, h, "nop", 0)) for h in toc.H]
-                    b = np.array([1.0 / len(validInitialStates) * (i in validInitialStates) for i in range(tocpomdp.n)])
-                    s = rnd.choice(validInitialStates)
+        # Equation 14.
+        if bfa == "side of road":
+            if bfhata != "human":
+                rho[2] = 1.0
+                return rho
 
-                    for t in range(timeRemaining + 1):
-                        a, v = take_action(tocpomdp, Gamma, pi, b)
-                        sp = transition_state(tocpomdp, s, a)
-                        o = make_observation(tocpomdp, a, sp)
-                        b = update_belief(tocpomdp, b, a, o)
-                        s = sp
+        # Equation 15.
+        elif bfa != "side of road":
+            if bfhata in [bfa, "side of road"]:
+                rho[bfhataIndex] = 1.0
+                return rho
 
-                    if s == tocpomdp.states.index("success"):
-                        self.rho[i][timeRemaining][0] += 1.0
-                    elif s == tocpomdp.states.index("failure"):
-                        self.rho[i][timeRemaining][1] += 1.0
-                    elif s == tocpomdp.states.index("aborted"):
-                        self.rho[i][timeRemaining][2] += 1.0
+        # Now ensure a valid time remaining.
+        timeRemaining = min(len(toc.T) - 1, timeRemaining)
 
-                self.rho[i][timeRemaining] /= float(numIterations)
+        numSuccess = 0
+        numFailure = 0
+        numAborted = 0
 
-        print(self.rho)
+        for k in range(numIterations):
+            validInitialStates = [tocpomdp.states.index((timeRemaining, h, "nop", 0)) for h in toc.H]
+            b = np.array([1.0 / len(validInitialStates) * (i in validInitialStates) for i in range(tocpomdp.n)])
+            s = rnd.choice(validInitialStates)
+
+            for t in range(timeRemaining + 1):
+                a, v = take_action(tocpomdp, Gamma, pi, b)
+                sp = transition_state(tocpomdp, s, a)
+                o = make_observation(tocpomdp, a, sp)
+                b = update_belief(tocpomdp, b, a, o)
+                s = sp
+
+            if s == tocpomdp.states.index("success"):
+                numSuccess += 1
+            elif s == tocpomdp.states.index("failure"):
+                numFailure += 1
+            elif s == tocpomdp.states.index("aborted"):
+                numAborted += 1
+
+        # Equation 14.
+        if bfa == "side of road":
+            # Note: bfhata = "human" (lambda) here because otherwise it would
+            # have returned already in the beginning...
+            rho[0] = float(numSuccess)
+            rho[2] = float(numFailure + numAborted)
+            rho /= float(numIterations)
+            return rho
+
+        # Equation 15.
+        elif bfa != "side of road":
+            # Note: bfhata not in [bfa, "side of road"] here because otherwise it would
+            # have returned already in the beginning...
+            rho[0] = float(numSuccess)
+            rho[1] = float(numFailure)
+            rho[2] = float(numAborted)
+            rho /= float(numIterations)
+            return rho
+
+        return None
 
     def create(self, toc, tocpomdp, path, controller=None):
         """ Create the MDP SSP given the ToC's path planning problem and the ToC problem itself.
@@ -117,32 +156,42 @@ class ToCSSP(MDP):
         self.toc = toc
         self.tocpomdp = tocpomdp
 
-        self._compute_rho()
+        self.tocpomdpGamma = list()
+        self.tocpomdppi = list()
+        for pomdp in self.tocpomdp:
+            Gamma, pi, timing = pomdp.solve()
+            self.tocpomdpGamma += [Gamma]
+            self.tocpomdppi += [pi]
 
         calE = ["success", "failure", "aborted"]
-        X = ["human", "vehicle"]
-        Ad = ["direction %i" % (i) for i in range(path.maxOutgoingDegree)]
-        Ac = ["keep", "switch"]
+        calA = ["human", "vehicle", "side of road"]
+        D = ["direction %i" % (i) for i in range(path.maxOutgoingDegree)]
+
+        V = path.V + ["vf"]
 
         if controller == "human":
-            X = ["human"]
-            Ac = ["keep"]
+            calA = ["human"]
         elif controller == "vehicle":
-            X = ["vehicle"]
-            Ac = ["keep"]
+            calA = ["vehicle"]
 
-        self.states = list(it.product(path.V, X)) + list(calE)
+        self.states = list(it.product(V, calA))
         self.n = len(self.states)
 
-        self.actions = list(it.product(Ad, Ac))
+        self.actions = list(it.product(D, calA))
         self.m = len(self.actions)
 
-        self.theta = {(v, ad): None for v, ad in it.product(path.V, Ad)}
+        theta = {(v, d): None for v, d in it.product(V, D)}
         for v in path.V:
             vEdges = [e for e in path.E if e[0] == v]
             vEdges = sorted(vEdges, key=lambda z: z[1])
-            for adIndex, e in enumerate(vEdges):
-                self.theta[(v, Ad[adIndex])] = e[1]
+            for dIndex, e in enumerate(vEdges):
+                theta[(v, D[dIndex])] = e[1]
+        for bfa in calA:
+            for d in D:
+                theta[("vf", d)] = "vf"
+
+        # Compute all the possible rho values, given all possible states (each having a different time to TOC).
+        rho = [[[self._compute_rho(bfa, bfhata, timeRemaining) for bfhata in calA] for bfa in calA] for timeRemaining in self.toc[0].T]
 
         # The maximum number of successor states is always bounded by 3, because
         # the uncertainty is only ever over the result of the ToC POMDP final
@@ -152,127 +201,100 @@ class ToCSSP(MDP):
         S = [[[int(-1) for sp in range(self.ns)] for a in range(self.m)] for s in range(self.n)]
         T = [[[float(0.0) for sp in range(self.ns)] for a in range(self.m)] for s in range(self.n)]
         for s, state in enumerate(self.states):
-            v = None
-            x = None
-            if state not in calE:
-                v = state[0]
-                x = state[1]
-                xIndex = X.index(x)
+            v = state[0]
+            bfa = state[1]
+            bfaIndex = calA.index(bfa)
 
             for a, action in enumerate(self.actions):
-                ad = action[0]
-                ac = action[1]
-                adIndex = Ad.index(ad)
-                acIndex = Ac.index(ac)
+                d = action[0]
+                bfhata = action[1]
+                dIndex = D.index(d)
+                bfhataIndex = calA.index(bfhata)
 
-                e = None
-                aleph = None
-                rho = None
-                if state not in calE:
-                    e = (v, self.theta[(v, ad)])
-                    aleph = not (e not in path.Eac and x == "vehicle") and v != path.vg
-                    try:
-                        # This will only fail for e = theta returning a None for the impossible
-                        # action. This essentially handles the A(s) case.
-                        rho = self._compute_rho(tocpomdp[xIndex], int(path.w[e]))
-                    except KeyError:
-                        pass
+                e = (v, theta[(v, d)])
+                rho_s_bfhata = None
+                try:
+                    # This will only fail for e = theta returning a None for the impossible
+                    # action. This essentially handles the A(s) case. If this is the failure
+                    # vertex, then it doesn't matter what the weight is, since it will have
+                    # issues regardless being in a dead end.
+                    if v == "vf":
+                        rho_s_bfhata = rho[1][bfaIndex][bfhataIndex]
+                    else:
+                        timeRemaining = min(len(self.toc[0].T) - 1, int(path.w[e]))
+                        rho_s_bfhata = rho[timeRemaining][bfaIndex][bfhataIndex]
+                except KeyError:
+                    # We handle invalid actions by immediately transitioning to the failure
+                    # vertex "vf".
+                    S[s][a][0] = self.states.index(("vf", bfa))
+                    T[s][a][0] = 1.0
+                    continue
 
                 cur = 0
 
                 for sp, statePrime in enumerate(self.states):
-                    vp = None
-                    xp = None
-                    if statePrime not in calE:
-                        vp = statePrime[0]
-                        xp = statePrime[1]
+                    vp = statePrime[0]
+                    bfap = statePrime[1]
+                    bfapIndex = calA.index(bfap)
 
-                    timeDilation = 3
-                    timeToTransferControl = min(len(toc[0].T) - 1, int(path.w[e]) * timeDilation)
+                    if bfa == "human": # lambda
+                        # Equation 11.
+                        T_lambda = 0.0
+                        if vp == theta[(v, d)]:
+                            T_lambda = 1.0
 
-                    # Successful transfer of control over current state.
-                    if state not in calE and statePrime not in calE and \
-                            aleph and \
-                            self.theta[(v, ad)] == vp and \
-                            ac == "switch" and \
-                            x != xp:
-                        S[s][a][cur] = sp
-                        if x == "human":
-                            T[s][a][cur] = self.rho[0][timeToTransferControl][0]
-                        else:
-                            T[s][a][cur] = self.rho[1][timeToTransferControl][0]
-                        cur += 1
+                        # Don't store a 0.0 state transition...
+                        if T_lambda != 0.0:
+                            # Equation 1.
+                            if bfa == bfhata and bfhata == bfap:
+                                S[s][a][cur] = sp
+                                T[s][a][cur] = T_lambda
+                                cur += 1
+                            elif bfa != bfhata:
+                                S[s][a][cur] = sp
+                                T[s][a][cur] = T_lambda * rho_s_bfhata[bfapIndex]
+                                cur += 1
 
-                    # Failed to transfer control over current state, but next state is autonomy-capable.
-                    if state not in calE and statePrime not in calE and \
-                            aleph and \
-                            self.theta[(v, ad)] == vp and \
-                            ac == "switch" and \
-                            x == xp:
-                        S[s][a][cur] = sp
-                        if x == "human":
-                            T[s][a][cur] = self.rho[0][timeToTransferControl][1]
-                        else:
-                            T[s][a][cur] = self.rho[1][][1]
-                        cur += 1
+                    if bfa == "vehicle": # nu
+                        # Equation 12.
+                        T_nu = 0.0
+                        if e in path.Ec and vp == theta[(v, d)]:
+                            T_nu = 1.0
+                        elif (v, theta[(v, d)]) not in path.Ec and vp == "vf":
+                            T_nu = 1.0
 
-                    # Aborted transfer of control over current state. This now means a self-loop, since
-                    # the car pulls over safely and waits for the driver.
-                    #if state not in calE and statePrime == "aborted" and \
-                    #        aleph and \
-                    #        self.theta[(v, ad)] is not None and \
-                    #        ac == "switch":
-                    if state not in calE and statePrime not in calE and \
-                            aleph and \
-                            self.theta[(v, ad)] is not None and \
-                            ac == "switch" and \
-                            state == statePrime:
-                        S[s][a][cur] = sp
-                        if x == "human":
-                            T[s][a][cur] = self.rho[0][path.w[e]][2]
-                        else:
-                            T[s][a][cur] = self.rho[1][path.w[e]][2]
-                        cur += 1
+                        # Don't store a 0.0 state transition...
+                        if T_nu != 0.0:
+                            # Equation 1.
+                            if bfa == bfhata and bfhata == bfap:
+                                S[s][a][cur] = sp
+                                T[s][a][cur] = T_nu
+                                cur += 1
+                            elif bfa != bfhata:
+                                S[s][a][cur] = sp
+                                T[s][a][cur] = T_nu * rho_s_bfhata[bfapIndex]
+                                cur += 1
 
-                    # Kept current controller. No transfer of control.
-                    if state not in calE and statePrime not in calE and \
-                            aleph and \
-                            self.theta[(v, ad)] == vp and \
-                            ac == "keep" and \
-                            x == xp:
-                        S[s][a][cur] = sp
-                        T[s][a][cur] = 1.0
-                        cur += 1
+                    if bfa == "side of road":
+                        # Equation 13.
+                        T_sigma = 0.0
+                        if vp == v:
+                            T_sigma = 1.0
 
-                    # Reached goal. Successfully reached success state!
-                    if state not in calE and statePrime == "success" and \
-                            self.theta[(v, ad)] is not None and \
-                            not (e not in path.Eac and x == "vehicle") and \
-                            v == path.vg:
-                        S[s][a][cur] = sp
-                        T[s][a][cur] = 1.0
-                        cur += 1
+                        # Don't store a 0.0 state transition...
+                        if T_sigma != 0.0:
+                            # Equation 1.
+                            if bfa == bfhata and bfhata == bfap:
+                                S[s][a][cur] = sp
+                                T[s][a][cur] = T_sigma
+                                cur += 1
+                            elif bfa != bfhata:
+                                S[s][a][cur] = sp
+                                T[s][a][cur] = T_sigma * rho_s_bfhata[bfapIndex]
+                                cur += 1
 
-                    # Reached a road that is not autonomy-capable, but vehicle is in control. Death.
-                    if state not in calE and statePrime == "failure" and \
-                            self.theta[(v, ad)] is not None and \
-                            e not in path.Eac and x == "vehicle":
-                        S[s][a][cur] = sp
-                        T[s][a][cur] = 1.0
-                        cur += 1
-
-                    # The action is not available here. This is the A(s) case. Death.
-                    if state not in calE and statePrime == "failure" and \
-                            self.theta[(v, ad)] is None:
-                        S[s][a][cur] = sp
-                        T[s][a][cur] = 1.0
-                        cur += 1
-
-                    # Absorbing states.
-                    if state in calE and statePrime in calE and state == statePrime:
-                        S[s][a][cur] = sp
-                        T[s][a][cur] = 1.0
-                        cur += 1
+                if sum(T[s][a]) != 1.0:
+                   print(s, a, sum(T[s][a]), "=", T[s][a])
 
         array_type_nmns_int = ct.c_int * (self.n * self.m * self.ns)
         array_type_nmns_float = ct.c_float * (self.n * self.m * self.ns)
@@ -283,11 +305,6 @@ class ToCSSP(MDP):
         wmin = min(path.w.values())
         wmax = max(path.w.values())
 
-        # At every intersection, there's always a slight delay on average due to merging traffic. This is considered part of
-        # the weight, but I put it here instead.
-        adjustment = wmin
-        epsilonPenalty = wmin
-
         self.epsilon = 0.001
         self.gamma = 0.999 # 1.0 # TODO: Change once you implement LAO*.
         #self.horizon = max(10000, len(path.V) + 1) # This must be very large horizon, since wmin and wmax are very far apart.
@@ -295,46 +312,27 @@ class ToCSSP(MDP):
 
         R = [[0.0 for a in range(self.m)] for s in range(self.n)]
         for s, state in enumerate(self.states):
-            v = None
-            x = None
-            if state not in calE:
-                v = state[0]
-                x = state[1]
+            v = state[0]
+            bfa = state[1]
 
             for a, action in enumerate(self.actions):
-                ad = action[0]
-                ac = action[1]
-                adIndex = Ad.index(ad)
-                acIndex = Ac.index(ac)
+                d = action[0]
+                bfhata = action[1]
+                dIndex = D.index(d)
+                bfhataIndex = calA.index(bfhata)
 
-                e = None
-                if state not in calE:
-                    e = (v, self.theta[(v, ad)])
+                e = (v, theta[(v, d)])
 
-                # Normal cost of being on a road.
-                if state not in calE and self.theta[(v, ad)] is not None and not (e in path.Eap and x == "human"):
-                    R[s][a] = -path.w[e] - adjustment
-
-                # Extra penalty included on a normal road which is autonomy-preferred but
-                # the human is driving.
-                if state not in calE and self.theta[(v, ad)] is not None and e in path.Eap and x == "human":
-                    R[s][a] = -path.w[e] - adjustment - epsilonPenalty #wmax
-
-                # Handle the "not in A(s)" case, which sets the penalty to an impossibly large number.
-                if state not in calE and self.theta[(v, ad)] is None:
-                    R[s][a] = -wmax - adjustment # * self.horizon
-
-                ## Constant for the absorbing 'success' state.
-                if state == "success":
+                # Equation 16, plus the tie-breaking.
+                if v != path.vg:
+                    if e[1] is None or e == ("vf", "vf"): # Invalid action, or dead end.
+                        R[s][a] = -wmax
+                    elif e in path.Ep: # Tie-breaking trick.
+                        R[s][a] = -path.w[e] + wmin / 2.0
+                    else:
+                        R[s][a] = -path.w[e]
+                else:
                     R[s][a] = 0.0
-
-                ## Constant for the absorbing 'failure' state.
-                if state == "failure":
-                    R[s][a] = -wmax - adjustment # * self.horizon
-
-                ## Constant for the absorbing 'aborted' state. This is no longer a reachable state.
-                if state == "aborted":
-                    R[s][a] = -wmax - adjustment # * self.horizon
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()
@@ -344,29 +342,47 @@ class ToCSSP(MDP):
         self.R = array_type_nm_float(*np.array(R).flatten())
 
         # The initial state is the initial state in the graph, with the human driving, except
-        # if the vehicle is the only one that can control the ToC SSP.
-        if controller is None or controller == "human":
+        # if the vehicle is the only one that can control the ToC SSP. Similarly for the goal.
+        if controller is None:
             self.s0 = self.states.index((path.v0, "human"))
-        else:
+
+            self.ng = 3
+            array_type_ng_uint = ct.c_uint * (self.ng)
+
+            self.goals = array_type_ng_uint(*np.array([self.states.index((path.vg, bfa)) for bfa in calA]))
+        elif controller == "human":
+            self.s0 = self.states.index((path.v0, "human"))
+
+            self.ng = 1
+            array_type_ng_uint = ct.c_uint * (self.ng)
+
+            self.goals = array_type_ng_uint(*np.array([self.states.index((path.vg, "human"))]))
+        elif controller == "vehicle":
             self.s0 = self.states.index((path.v0, "vehicle"))
 
-        # The goal state is the success state.
-        self.goals = [self.states.index("success")]
+            self.ng = 1
+            array_type_ng_uint = ct.c_uint * (self.ng)
+
+            self.goals = array_type_ng_uint(*np.array([self.states.index((path.vg, "vehicle"))]))
 
 
 if __name__ == "__main__":
     print("Performing ToCSSP Unit Test...")
 
-    tocHtoV = ToC(randomize=(2, 2, 2, 5))
-    tocpomdpHtoV = ToCPOMDP()
-    tocpomdpHtoV.create(tocHtoV)
+    tocHuman = ToC(randomize=(2, 2, 2, 5))
+    tocpomdpHuman = ToCPOMDP()
+    tocpomdpHuman.create(tocHuman)
 
-    tocVtoH = ToC(randomize=(2, 2, 2, 5))
-    tocpomdpVtoH = ToCPOMDP()
-    tocpomdpVtoH.create(tocVtoH)
+    tocVehicle = ToC(randomize=(2, 2, 2, 5))
+    tocpomdpVehicle = ToCPOMDP()
+    tocpomdpVehicle.create(tocVehicle)
 
-    toc = (tocHtoV, tocVtoH)
-    tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
+    tocSideOfRoad = ToC(randomize=(2, 2, 2, 5))
+    tocpomdpSideOfRoad = ToCPOMDP()
+    tocpomdpSideOfRoad.create(tocSideOfRoad)
+
+    toc = (tocHuman, tocVehicle, tocSideOfRoad)
+    tocpomdp = (tocpomdpHuman, tocpomdpVehicle, tocpomdpSideOfRoad)
 
     print("Creating the ToC Path... ", end='')
     sys.stdout.flush()
@@ -383,7 +399,8 @@ if __name__ == "__main__":
     print("Done.\nSolving the ToC SSP... ", end='')
     sys.stdout.flush()
 
-    V, pi = tocssp.solve()
+    #V, pi, timing = tocssp.solve(algorithm='lao*', process='cpu')
+    V, pi, timing = tocssp.solve(algorithm='vi', process='gpu')
 
     print("Done.\nResults:")
 

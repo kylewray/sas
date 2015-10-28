@@ -53,15 +53,13 @@ def simulate(tocssp, tocpath, pi, printTrajectory=False):
 
     maxIterations = 10000
 
-    calEIndexes = [tocssp.states.index("success"), tocssp.states.index("failure"), tocssp.states.index("aborted")]
-
     # A counter of either 0 or 1 for each state visited if it was autonomous or not and they were driving autonomously.
     autonomousCounter = list()
 
     travelTime = 0.0
     s = tocssp.s0
 
-    while s not in calEIndexes and len(autonomousCounter) < maxIterations:
+    while tocssp.states[s][0] != tocpath.vg and len(autonomousCounter) < maxIterations:
         v, x = tocssp.states[s]
 
         if printTrajectory:
@@ -87,7 +85,7 @@ def simulate(tocssp, tocpath, pi, printTrajectory=False):
 
         # The last transision from s to sp at an absorbing state has no extra properties
         # in terms of time or autonomy. Skip it.
-        if sp not in calEIndexes:
+        if tocssp.states[sp][0] != tocpath.vg:
             # Increment the autonomy counter and travel time. Note that we count it if
             # the autonomous driving was done on *this* state, since it is assumed that
             # transfer of control will occur near end of the edge itself (if at all).
@@ -97,7 +95,7 @@ def simulate(tocssp, tocpath, pi, printTrajectory=False):
             if printTrajectory:
                 print("State Prime: %i (%s, %s)" % (sp, vp, xp))
 
-            autonomousCounter += [x == "vehicle" and e in tocpath.Eap]
+            autonomousCounter += [x == "vehicle" and e in tocpath.Ep]
 
             # Add to the travel time. Also, handle the special case in which ToC Failed.
             # This, as per the definition, assumes that the maximal amount of time is
@@ -114,7 +112,7 @@ def simulate(tocssp, tocpath, pi, printTrajectory=False):
 
         s = sp
 
-    isGoalReachable = (s == calEIndexes[0])
+    isGoalReachable = (tocssp.states[s][0] == tocpath.vg)
 
     percentageAutonomous = (tocssp.states[tocssp.s0][1] == "vehicle")
     if len(autonomousCounter) > 0:
@@ -138,7 +136,7 @@ cities = [("Austin", "maps/austin/austin.osm", 152702349, 282401347),
          ]
 
 
-resultsFilename = "results/results_" + str(int(round(time.time() * 1000))) + ".csv"
+resultsFilename = os.path.join(thisFilePath, "..", "results", "results_" + str(int(round(time.time() * 1000))) + ".csv")
 numTrials = 100
 
 
@@ -147,16 +145,20 @@ def batch():
 
     # As our model allows, we create one POMDP for each 'scenario' which works for any ToC SSP (city or map).
     # Here, we allow for two scenarios: human to vehicle and vehicle to human.
-    tocHtoV = ToCInteract(nt=8)
-    tocpomdpHtoV = ToCPOMDP()
-    tocpomdpHtoV.create(tocHtoV)
+    tocHuman = ToCInteract(nt=8)
+    tocpomdpHuman = ToCPOMDP()
+    tocpomdpHuman.create(tocHuman)
 
-    tocVtoH = ToCInteract(nt=8)
-    tocpomdpVtoH = ToCPOMDP()
-    tocpomdpVtoH.create(tocVtoH)
+    tocVehicle = ToCInteract(nt=8)
+    tocpomdpVehicle = ToCPOMDP()
+    tocpomdpVehicle.create(tocVehicle)
 
-    toc = (tocHtoV, tocVtoH)
-    tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
+    tocSideOfRoad = ToCInteract(nt=8)
+    tocpomdpSideOfRoad = ToCPOMDP()
+    tocpomdpSideOfRoad.create(tocSideOfRoad)
+
+    toc = (tocHuman, tocVehicle, tocSideOfRoad)
+    tocpomdp = (tocpomdpHuman, tocpomdpVehicle, tocpomdpSideOfRoad)
 
     for city, filename, startVertex, goalVertex in cities:
         print("Experiment '%s'" % (city), end='')
@@ -177,7 +179,8 @@ def batch():
         # Step 1: Construct the ToCSSP with just a human controller.
         tocssp = ToCSSP()
         tocssp.create(toc, tocpomdp, tocpath, controller="human")
-        V, pi = tocssp.solve()
+        #V, pi, timing = tocssp.solve(algorithm='lao*', process='cpu')
+        V, pi, timing = tocssp.solve(algorithm='vi', process='gpu')
 
         isGoalReachable['h'], percentageAutonomous['h'], travelTime['h'] = simulate(tocssp, tocpath, pi)
 
@@ -187,7 +190,8 @@ def batch():
         # Step 2: Construct the ToCSSP with just a vehicle controller.
         tocssp = ToCSSP()
         tocssp.create(toc, tocpomdp, tocpath, controller="vehicle")
-        V, pi = tocssp.solve()
+        #V, pi, timing = tocssp.solve(algorithm='lao*', process='cpu')
+        V, pi, timing = tocssp.solve(algorithm='vi', process='gpu')
 
         isGoalReachable['v'], percentageAutonomous['v'], travelTime['v'] = simulate(tocssp, tocpath, pi)
 
@@ -197,7 +201,8 @@ def batch():
         # Step 3: Construct the ToCSSP with both a human and vehicle controller.
         tocssp = ToCSSP()
         tocssp.create(toc, tocpomdp, tocpath, controller=None)
-        V, pi = tocssp.solve()
+        #V, pi, timing = tocssp.solve(algorithm='lao*', process='cpu')
+        V, pi, timing = tocssp.solve(algorithm='vi', process='gpu')
 
         isGoalReachableTrials = np.array([0.0 for i in range(numTrials)])
         percentageAutonomousTrials = np.array([0.0 for i in range(numTrials)])
