@@ -125,8 +125,8 @@ class ToCSSP(MDP):
         if bfa == "side of road":
             # Note: bfhata = "human" (lambda) here because otherwise it would
             # have returned already in the beginning...
-            rho[0] = float(numSuccess)
-            rho[2] = float(numFailure + numAborted)
+            rho[0] = float(numSuccess) # rho[0] == rho[a' = human]
+            rho[2] = float(numFailure + numAborted) # rho[2] = rho[a' = side of road]
             rho /= float(numIterations)
             return rho
 
@@ -134,9 +134,9 @@ class ToCSSP(MDP):
         elif bfa != "side of road":
             # Note: bfhata not in [bfa, "side of road"] here because otherwise it would
             # have returned already in the beginning...
-            rho[0] = float(numSuccess)
-            rho[1] = float(numFailure)
-            rho[2] = float(numAborted)
+            rho[bfhataIndex] = float(numSuccess)
+            rho[bfaIndex] = float(numFailure)
+            rho[2] = float(numAborted) # rho[2] = rho[a' = side of road]
             rho /= float(numIterations)
             return rho
 
@@ -186,9 +186,12 @@ class ToCSSP(MDP):
             vEdges = sorted(vEdges, key=lambda z: z[1])
             for dIndex, e in enumerate(vEdges):
                 theta[(v, D[dIndex])] = e[1]
-        for bfa in calA:
-            for d in D:
-                theta[("vf", d)] = "vf"
+        for d in D:
+            theta[("vf", d)] = "vf"
+            theta[(path.vg, d)] = path.vg
+
+        # For 'simple_tocssp.py', which lets you export for the visualizer, we need to know theta. Store it.
+        self.theta = theta
 
         # Compute all the possible rho values, given all possible states (each having a different time to TOC).
         rho = [[[self._compute_rho(bfa, bfhata, timeRemaining) for bfhata in calA] for bfa in calA] for timeRemaining in self.toc[0].T]
@@ -293,9 +296,6 @@ class ToCSSP(MDP):
                                 T[s][a][cur] = T_sigma * rho_s_bfhata[bfapIndex]
                                 cur += 1
 
-                if sum(T[s][a]) != 1.0:
-                   print(s, a, sum(T[s][a]), "=", T[s][a])
-
         array_type_nmns_int = ct.c_int * (self.n * self.m * self.ns)
         array_type_nmns_float = ct.c_float * (self.n * self.m * self.ns)
 
@@ -306,9 +306,9 @@ class ToCSSP(MDP):
         wmax = max(path.w.values())
 
         self.epsilon = 0.001
-        self.gamma = 0.999 # 1.0 # TODO: Change once you implement LAO*.
-        #self.horizon = max(10000, len(path.V) + 1) # This must be very large horizon, since wmin and wmax are very far apart.
-        self.horizon = int(np.log(2.0 * (wmax - wmin) / (self.epsilon * (1.0 - self.gamma))) / np.log(1.0 / self.gamma))
+        self.gamma = 1.0
+        self.horizon = 10000
+        #self.horizon = max(10000, int(np.log(2.0 * (wmax - wmin) / (self.epsilon * (1.0 - self.gamma))) / np.log(1.0 / self.gamma)))
 
         R = [[0.0 for a in range(self.m)] for s in range(self.n)]
         for s, state in enumerate(self.states):
@@ -318,21 +318,20 @@ class ToCSSP(MDP):
             for a, action in enumerate(self.actions):
                 d = action[0]
                 bfhata = action[1]
-                dIndex = D.index(d)
-                bfhataIndex = calA.index(bfhata)
 
                 e = (v, theta[(v, d)])
 
-                # Equation 16, plus the tie-breaking.
-                if v != path.vg:
-                    if e[1] is None or e == ("vf", "vf"): # Invalid action, or dead end.
-                        R[s][a] = -wmax
-                    elif e in path.Ep: # Tie-breaking trick.
-                        R[s][a] = -path.w[e] + wmin / 2.0
-                    else:
-                        R[s][a] = -path.w[e]
-                else:
+                # Equation 16, plus the tie-breaking and handling invalid actions.
+                if v == path.vg:
                     R[s][a] = 0.0
+                elif v == "vf":
+                    R[s][a] = (wmax + wmin * 3.0)
+                elif theta[(v, d)] == None:
+                    R[s][a] = (wmax + wmin * 2.0)
+                elif e in path.Ep and bfa != "vehicle":
+                    R[s][a] = (path.w[e] + wmin)
+                else:
+                    R[s][a] = path.w[e]
 
         self.Rmax = np.array(R).max()
         self.Rmin = np.array(R).min()

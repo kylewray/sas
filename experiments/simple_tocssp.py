@@ -46,29 +46,26 @@ def save_policy_for_visualizer(tocssp, tocpath, V, pi, filename):
             filename    --  The filename of the output policy file.
     """
 
-    calE = ["success", "failure", "aborted"]
-
     with open(filename, 'w') as f:
         for s, state in enumerate(tocssp.states):
-            v = None
-            x = None
-            if state not in calE:
-                v = state[0]
-                x = state[1]
+            v = state[0]
+            bfa = state[1]
+
+            # Only save the states expanded and visited by LAO*.
+            if pi[s] == tocssp.m:
+                continue
 
             action = tocssp.actions[pi[s]]
-            ad = action[0]
-            ac = action[1]
+            d = action[0]
+            bfhata = action[1]
 
-            e = None
-            if state not in calE:
-                e = (v, tocssp.theta[(v, ad)])
+            e = (v, tocssp.theta[(v, d)])
 
-            if state not in calE and not (e not in tocpath.Eac and x == "vehicle"):
+            if v != tocpath.vg and v != "vf": # and not (e not in tocpath.Ec and bfa == "vehicle")
                 currentVertexUID = state[0]
-                currentAutonomy = int(state[1] == "vehicle")
+                currentAutonomy = int(state[1] == "vehicle" or state[1] == "side of road")
 
-                actionDirection, actionControl = tocssp.actions[pi[s]]
+                actionDirection, desiredActor = tocssp.actions[pi[s]]
                 nextVertexUID = tocssp.theta[(currentVertexUID, actionDirection)]
 
                 # This means the action was undefined at this state, i.e., it wasn't in A(s).
@@ -77,7 +74,7 @@ def save_policy_for_visualizer(tocssp, tocpath, V, pi, filename):
                     #nextVertexUID = currentVertexUID
 
                 nextAutonomy = 0
-                if (state[1] == "vehicle" and actionControl == "keep") or (state[1] == "human" and actionControl == "switch"):
+                if desiredActor == "vehicle" or desiredActor == "side of road":
                     nextAutonomy = 1
 
                 previousVertexUIDs = [e[0] for e in tocpath.E if e[1] == currentVertexUID]
@@ -98,16 +95,20 @@ if __name__ == "__main__":
         print("Must specify an input OSM file path, start UID, goal UID, and output policy file name, in that order.")
         sys.exit(0)
 
-    tocHtoV = ToCInteract(nt=8)
-    tocpomdpHtoV = ToCPOMDP()
-    tocpomdpHtoV.create(tocHtoV)
+    tocHuman = ToCInteract(nt=8)
+    tocpomdpHuman = ToCPOMDP()
+    tocpomdpHuman.create(tocHuman)
 
-    tocVtoH = ToCInteract(nt=8)
-    tocpomdpVtoH = ToCPOMDP()
-    tocpomdpVtoH.create(tocVtoH)
+    tocVehicle = ToCInteract(nt=8)
+    tocpomdpVehicle = ToCPOMDP()
+    tocpomdpVehicle.create(tocVehicle)
 
-    toc = (tocHtoV, tocVtoH)
-    tocpomdp = (tocpomdpHtoV, tocpomdpVtoH)
+    tocSideOfRoad = ToCInteract(nt=8)
+    tocpomdpSideOfRoad = ToCPOMDP()
+    tocpomdpSideOfRoad.create(tocSideOfRoad)
+
+    toc = (tocHuman, tocVehicle, tocSideOfRoad)
+    tocpomdp = (tocpomdpHuman, tocpomdpVehicle, tocpomdpSideOfRoad)
 
     print("Creating the ToC Path... ", end='')
     sys.stdout.flush()
@@ -128,7 +129,8 @@ if __name__ == "__main__":
     print("Done.\nSolving the ToC SSP... ", end='')
     sys.stdout.flush()
 
-    V, pi = tocssp.solve()
+    V, pi, timing = tocssp.solve(algorithm='lao*', process='cpu')
+    #V, pi, timing = tocssp.solve(algorithm='vi', process='gpu')
 
     print("Done.\nSaving the Policy... ", end='')
     sys.stdout.flush()
