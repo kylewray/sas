@@ -73,9 +73,7 @@ def save_policy_for_visualizer(tocssp, tocpath, V, pi, filename):
                     raise Exception()
                     #nextVertexUID = currentVertexUID
 
-                nextAutonomy = 0
-                if desiredActor == "vehicle" or desiredActor == "side of road":
-                    nextAutonomy = 1
+                nextAutonomy = int(desiredActor == "vehicle" or desiredActor == "side of road")
 
                 previousVertexUIDs = [e[0] for e in tocpath.E if e[1] == currentVertexUID]
 

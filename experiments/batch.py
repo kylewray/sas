@@ -131,7 +131,7 @@ cities = [("Austin", "maps/austin/austin.osm", 152702349, 282401347),
           ("Los Angeles", "maps/los_angeles/los_angeles.osm", 123739873, 1499113026),
           ("New York City", "maps/new_york_city/new_york_city.osm", 42960179, 448041300),
           ("Pittsburgh", "maps/pittsburgh/pittsburgh.osm", 104866192, 105701915),
-          ("San Francisco", "maps/san_francisco/san_francisco.osm", 259392513, 65307150),
+          ("San Francisco", "maps/san_francisco/san_francisco.osm", 259392513, 65299618), #65307150),
           ("Seattle", "maps/seattle/seattle.osm", 1506967740, 1730115922),
          ]
 
